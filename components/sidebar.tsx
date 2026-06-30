@@ -95,7 +95,7 @@ export function Sidebar({
                       </button>
                       <button
                         onClick={() => onDelete(c.id)}
-                        className="shrink-0 rounded p-1 text-white/0 transition hover:bg-white/10 hover:text-rose-300 group-hover:text-white/40"
+                        className="shrink-0 rounded p-1 text-white/30 transition hover:bg-white/10 hover:text-rose-300 group-hover:text-white/40"
                         aria-label="대화 삭제"
                       >
                         <Trash2 className="h-3.5 w-3.5" />

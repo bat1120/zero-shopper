@@ -32,18 +32,22 @@ export function ProductCard({
         (clickable ? " cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400/50" : "")
       }
     >
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-brand-600/30 to-brand-400/10 text-2xl">
+      <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-brand-600/30 to-brand-400/10 text-2xl">
+        {/* 이모지 베이스 — 이미지가 없거나 로드 실패 시 그대로 노출 */}
+        <span aria-hidden>{p.emoji ?? "🛍️"}</span>
         {p.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={p.imageUrl}
             alt={p.name}
             loading="lazy"
-            className="h-full w-full object-cover"
+            onError={(e) => {
+              // 죽은 이미지 URL은 깨진 아이콘 대신 이모지 베이스가 보이도록 숨김
+              e.currentTarget.style.visibility = "hidden";
+            }}
+            className="absolute inset-0 h-full w-full object-cover"
           />
-        ) : (
-          (p.emoji ?? "🛍️")
-        )}
+        ) : null}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">

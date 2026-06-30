@@ -140,14 +140,17 @@ export async function updateProfileFromConversation(
   }
 }
 
-/** 프로필 삭제(메모리 초기화). */
+/** 프로필 삭제(메모리 초기화). 실제로 삭제된 행이 있을 때만 true. */
 export async function deleteProfile(sessionId: string): Promise<boolean> {
   const db = getSupabase();
   if (!db || !sessionId) return false;
-  const { error } = await db.from(TABLE).delete().eq("session_id", sessionId);
+  const { error, count } = await db
+    .from(TABLE)
+    .delete({ count: "exact" })
+    .eq("session_id", sessionId);
   if (error) {
     console.error("[profile] delete 실패:", error.message);
     return false;
   }
-  return true;
+  return (count ?? 0) > 0;
 }

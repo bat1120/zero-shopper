@@ -190,9 +190,10 @@ export async function searchProductsLive(params: SearchParams): Promise<SearchRe
  */
 export async function searchProductsAuto(params: SearchParams): Promise<SearchResult> {
   if (hasNaverCredentials()) {
-    const live = await searchProductsLive(params);
-    // 라이브에서 0건이면 더미로 보조 (데모 안정성)
-    if (live.count > 0) return live;
+    // 라이브가 0건이어도 더미 카탈로그(가짜 상품)로 폴백하지 않는다.
+    // UI/프롬프트가 '네이버 실시간'이라 안내하므로 가짜를 실상품처럼 보이면 안 됨 —
+    // 빈 결과를 그대로 반환해 모델이 "못 찾음"을 정직히 말하고 조건 변경을 제안하게 한다.
+    return searchProductsLive(params);
   }
   return searchProductsSemantic(params);
 }

@@ -16,10 +16,11 @@ export async function GET(req: Request) {
   });
 }
 
-/** DELETE /api/profile — 개인화 메모리 초기화. */
+/** DELETE /api/profile — 개인화 메모리 초기화. 멱등(없어도 성공). */
 export async function DELETE(req: Request) {
   const sessionId = req.headers.get("x-session-id") ?? "";
-  const ok = await deleteProfile(sessionId);
-  if (!ok) return Response.json({ error: "초기화 실패" }, { status: 400 });
-  return Response.json({ ok: true });
+  // 메모리 초기화는 멱등: 프로필이 없어도(이미 비어 있어도) 성공으로 본다.
+  // (DB 오류는 deleteProfile 내부에서 로깅됨)
+  const cleared = await deleteProfile(sessionId);
+  return Response.json({ ok: true, cleared });
 }

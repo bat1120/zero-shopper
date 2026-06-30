@@ -65,9 +65,11 @@ export default function Home() {
   const [activeId, setActiveId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [memory, setMemory] = useState<{ summary: string; turns: number } | null>(null);
+  const [loadingConv, setLoadingConv] = useState(false); // 과거 대화 로딩 표시/입력 차단용(렌더 반영)
   const prevStatus = useRef(status);
 
   const busy = status === "submitted" || status === "streaming";
+  const inputBlocked = busy || loadingConv; // 전송 중 또는 과거 대화 로딩 중엔 입력 차단
   const isEmpty = messages.length === 0;
 
   const refreshMemory = useCallback(async () => {
@@ -140,6 +142,7 @@ export default function Home() {
     if (busy) stop();
     loadGenRef.current++; // 진행 중인 과거 대화 로딩 무효화
     loadingConvRef.current = false;
+    setLoadingConv(false);
     conversationIdRef.current = crypto.randomUUID();
     setActiveId(conversationIdRef.current);
     setMessages([]);
@@ -153,6 +156,7 @@ export default function Home() {
     }
     const gen = ++loadGenRef.current;
     loadingConvRef.current = true;
+    setLoadingConv(true);
     try {
       const res = await fetch(`/api/conversations/${id}`, {
         headers: { "x-session-id": sessionIdRef.current },
@@ -167,7 +171,10 @@ export default function Home() {
     } catch {
       /* 무시 */
     } finally {
-      if (gen === loadGenRef.current) loadingConvRef.current = false;
+      if (gen === loadGenRef.current) {
+        loadingConvRef.current = false;
+        setLoadingConv(false);
+      }
       setSidebarOpen(false);
     }
   }
@@ -237,6 +244,11 @@ export default function Home() {
 
       {/* 메시지 영역 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
+        {loadingConv && (
+          <div className="flex justify-center py-3">
+            <ToolRunningChip label="대화를 불러오는 중…" />
+          </div>
+        )}
         {isEmpty ? (
           <EmptyState onPick={submit} />
         ) : (
@@ -260,8 +272,12 @@ export default function Home() {
         {error && (
           <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
             오류가 발생했어요: {error.message}
-            <br />
-            (서버에 OPENAI_API_KEY가 설정되어 있는지 확인해 주세요.)
+            {/api[\s_-]?key|OPENAI|unauthorized|401|403|500/i.test(error.message) && (
+              <>
+                <br />
+                (서버에 OPENAI_API_KEY가 올바로 설정됐는지 확인해 주세요.)
+              </>
+            )}
           </div>
         )}
       </div>
@@ -278,6 +294,7 @@ export default function Home() {
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            disabled={loadingConv}
             onKeyDown={(e) => {
               // IME 조합 중(한글 등)의 Enter는 글자 확정용이므로 전송하지 않는다
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -286,8 +303,12 @@ export default function Home() {
               }
             }}
             rows={1}
-            placeholder="상황을 자유롭게 말해보세요. 예) 캠핑 입문인데 10만 원으로 뭐 살까?"
-            className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-white placeholder:text-white/30 focus:outline-none"
+            placeholder={
+              loadingConv
+                ? "대화를 불러오는 중…"
+                : "상황을 자유롭게 말해보세요. 예) 캠핑 입문인데 10만 원으로 뭐 살까?"
+            }
+            className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-white placeholder:text-white/30 focus:outline-none disabled:opacity-50"
           />
           {busy ? (
             <button
@@ -301,7 +322,7 @@ export default function Home() {
           ) : (
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || inputBlocked}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white transition enabled:hover:bg-brand-500 disabled:opacity-40"
               aria-label="보내기"
             >
@@ -394,6 +415,9 @@ function MessageBubble({
     );
   }
 
+  // 모든 파트가 null로 렌더되면(예: found=false 상세만 있는 경우) 빈 말풍선을 만들지 않는다
+  if (!message.parts.some(isRenderablePart)) return null;
+
   return (
     <div className="flex justify-start animate-fade-up">
       <div className="w-full max-w-[92%] space-y-2">
@@ -403,6 +427,20 @@ function MessageBubble({
       </div>
     </div>
   );
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// PartView가 무언가를 렌더하는 파트인지(=null이 아닌지) 판단 — 빈 말풍선 방지용
+function isRenderablePart(part: any): boolean {
+  if (part.type === "text") return Boolean(part.text?.trim());
+  if (part.type === "tool-get_product_detail") {
+    // output 단계에선 found=true 일 때만 렌더, 로딩/에러 단계는 칩을 렌더
+    if (part.state === "output-available") return Boolean(part.output?.found);
+    return true;
+  }
+  if (part.type === "tool-decision_guide") return part.state !== "output-error";
+  if (typeof part.type === "string" && part.type.startsWith("tool-")) return true;
+  return false;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
