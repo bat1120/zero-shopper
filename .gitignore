@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# 단, 예시 파일은 저장소에 포함 (실제 키가 든 .env.local 은 위 규칙으로 계속 제외됨)
+!.env.local.example
 
 # vercel
 .vercel

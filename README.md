@@ -1,36 +1,192 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🛍️ 제로쇼퍼 (ZeroShopper)
 
-## Getting Started
+> **상황 기반 AI 쇼핑 큐레이션 에이전트** — 스펙을 몰라도, 처한 "상황"만 말하면 의도를 해석해 상품을 검색·비교·추천합니다.
+>
+> (주)제로 「AI 에이전트 서비스 개발자」 사전 과제 프로토타입
 
-First, run the development server:
+| 항목 | 내용 |
+| --- | --- |
+| **배포 URL** | _(배포 후 기입)_ https://… |
+| **GitHub** | _(저장소 링크 기입)_ |
+| **시연 영상** | _(선택, 3분 이내 URL)_ |
+| **테스트 계정** | 별도 로그인 없음 — 접속 즉시 사용 가능 |
+
+---
+
+## 1. 문제 정의
+
+온라인 쇼핑에서 사람들이 진짜 어려워하는 건 "검색"이 아니라 **판단**입니다.
+
+- 상품명·스펙을 모르면 검색창에 무엇을 칠지조차 막막하다. (`"캠핑 입문 텐트"`를 검색해도 수백 개가 쏟아진다)
+- 후보를 찾아도 *내 상황(예산·용도·제약)* 에 무엇이 맞는지 스스로 비교·판단해야 한다.
+
+**제로쇼퍼**는 이 "판단"을 대신해 주는 에이전트입니다. 사용자는 키워드가 아니라 **상황**을 말합니다.
+
+> "캠핑 처음인데 10만 원으로 살 만한 2인 텐트 추천해줘"
+> "지하철 출퇴근용 노이즈캔슬링 이어폰, 30만 원 이하로"
+> "러닝 입문이고 무릎이 안 좋아. 어떤 러닝화가 맞을까?"
+
+에이전트는 문장에서 **카테고리·예산·용도·제약**을 추출하고, 카탈로그를 검색·비교한 뒤, **왜 이 상황에 이 상품이 맞는지** 근거와 트레이드오프를 들어 추천합니다.
+
+---
+
+## 2. 주요 기능
+
+- 💬 **자연어 상황 입력 → 의도 파싱**: 예산·용도·제약을 LLM이 해석
+- 🔎 **상품 검색 (Tool)**: 카탈로그에서 조건에 맞는 후보를 점수화·필터링
+- ⚖️ **상품 비교 (Tool)**: 후보 2개 이상이면 핵심 스펙·장단점을 표로 비교
+- 🧠 **근거 기반 추천**: 단순 나열이 아니라 "이 상황엔 A, 다만 B는 이런 트레이드오프" 식의 판단 제시
+- ⚡ **실시간 스트리밍 UI**: SSE 기반으로 답변이 타이핑되듯 출력
+- 🃏 **결과의 서비스화**: 도구 결과를 텍스트로 흘리지 않고 **상품 카드 · 비교표**로 렌더링
+- ❓ **부족한 정보는 역질문**: 추천에 결정적인 정보(예산·용도)가 없으면 한 가지만 되물음
+
+---
+
+## 3. 사용 기술 스택
+
+| 구분 | 기술 |
+| --- | --- |
+| 프레임워크 | **Next.js 16 (App Router)** · React 19 · TypeScript |
+| 스타일 | **Tailwind CSS v4** (헤드리스 UI 스타일의 자체 컴포넌트) |
+| AI / 에이전트 | **Vercel AI SDK v5 (`ai`, `@ai-sdk/openai`, `@ai-sdk/react`)** |
+| LLM | **OpenAI (기본 `gpt-4.1-mini`)** · Function/Tool Calling |
+| 검증 | **Zod** (도구 입력 스키마) |
+| 스트리밍 | **SSE** (`toUIMessageStreamResponse` / `useChat`) |
+| 배포 | **Vercel** |
+
+> 공고의 권장 스택(React · Next.js · TypeScript · Tailwind · Vercel AI SDK · SSE · Tool Calling · Zod)에 맞춰 구성했습니다.
+
+---
+
+## 4. 실행 방법
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 1) 의존성 설치
+npm install
+
+# 2) 환경변수 설정
+cp .env.local.example .env.local
+#   .env.local 을 열어 OPENAI_API_KEY=sk-... 를 채웁니다.
+
+# 3) 개발 서버
+npm run dev          # http://localhost:3000
+
+# 4) 프로덕션 빌드
+npm run build && npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**필수 환경변수**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 키 | 설명 |
+| --- | --- |
+| `OPENAI_API_KEY` | OpenAI API 키 (필수) |
+| `OPENAI_CHAT_MODEL` | 사용할 모델 (선택, 기본 `gpt-4.1-mini`). 비용을 더 아끼려면 `gpt-4o-mini` 로 교체 가능 |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> 키가 없으면 `/api/chat`이 친절한 안내 메시지를 반환하므로 화면이 깨지지 않습니다.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 5. LLM / Agent 동작 구조
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+사용자 입력(상황)
+   │
+   ▼
+[useChat] ──POST /api/chat──► [streamText + system prompt]
+                                   │
+                  ┌────────────────┼─────────────────┐
+                  ▼                ▼                 ▼
+          search_products   compare_products   get_product_detail   ← Tool(Function) Calling
+                  │                │                 │
+                  └──── 도구 실행 결과를 모델에 반영(멀티스텝 루프) ───┘
+                                   │  (stopWhen: 최대 6스텝)
+                                   ▼
+                       최종 추천 텍스트 + 도구 결과 스트리밍(SSE)
+                                   │
+                                   ▼
+   상품 카드 · 비교표 · 추천 근거로 렌더링 (message.parts 단위)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**판단 흐름의 핵심** — 이 과제의 평가 포인트인 *"단순 LLM API 호출이 아니라, 에이전트가 어떤 흐름으로 판단·행동하는가"* 에 맞춰 설계했습니다.
 
-## Deploy on Vercel
+1. **의도 파싱**: 시스템 프롬프트가 모델에게 "카테고리·예산·용도·제약을 먼저 파악"하도록 지시. 결정적 정보가 없으면 역질문.
+2. **행동(도구 호출)**: 모델이 스스로 `search_products`를 호출(예산은 `maxPrice`, 용도는 `useCase`로 매핑). 후보가 여럿이면 `compare_products`로 비교.
+3. **멀티스텝 루프**: `stopWhen: stepCountIs(6)` 으로 *검색 → (결과 보고) → 비교 → 최종 답변* 의 연쇄를 허용.
+4. **근거화**: 도구 결과를 받아 사용자의 상황과 연결해 추천 이유·트레이드오프를 생성.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+> "GPT 래퍼"와의 차이: 모델이 **무엇을·언제 검색/비교할지 스스로 결정**하고, 그 결과를 **구조화된 서비스 경험(카드/표)** 으로 연결합니다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 도구(Tools) 정의
+
+| 도구 | 입력 | 역할 |
+| --- | --- | --- |
+| `search_products` | `keywords, category, minPrice, maxPrice, useCase, sortBy, limit` | 상황/예산/용도로 후보 검색·점수화 |
+| `compare_products` | `productIds[]` (≥2) | 핵심 스펙·장단점 비교 |
+| `get_product_detail` | `productId` | 단일 상품 상세 |
+
+---
+
+## 6. 데이터 흐름
+
+- **카탈로그**: `lib/products.ts` 의 정적 더미 데이터(노트북·이어폰·텐트·러닝화·로봇청소기·커피머신·모니터·키보드 등 8개 카테고리, 36개 상품). 실제 서비스라면 DB·커머스 API로 대체됩니다.
+- **검색 로직**: `searchProducts()` 가 카테고리(강한 신호)·용도·키워드·평점을 가중 점수화하고 가격을 하드 필터링한 뒤 정렬해 상위 N개를 반환.
+- **토큰 최적화**: 도구가 LLM에 돌려주는 결과는 핵심 필드로 슬림화. UI는 동일 `output`을 받아 카드/표를 그립니다.
+- **상태**: 대화 상태는 `useChat`이 클라이언트에서 관리(서버는 무상태). 각 메시지는 `parts`(텍스트/도구 호출/도구 결과)로 구성되어 파트 단위로 렌더링.
+
+---
+
+## 7. 본인이 중점적으로 구현한 부분
+
+- **에이전트의 "판단 흐름" 설계**: 시스템 프롬프트 + 3종 도구 + 멀티스텝 루프로 *의도 파싱 → 도구 행동 → 근거 추천* 파이프라인 구성.
+- **도구 결과의 서비스화**: 도구 `output`을 그대로 흘리지 않고 `message.parts`를 파싱해 **상품 카드 / 비교표 / 진행 상태 칩**으로 렌더링 → "실제 쇼핑 경험"에 가깝게.
+- **검색 랭킹 로직**: 카테고리·용도·키워드·가격을 조합한 가중 점수 + 백업 폴백(매칭이 0이면 가격 필터 통과분 평점순) 설계.
+- **UX 디테일**: 빈 화면 추천 프롬프트, 스트리밍 표시, 중지 버튼, 자동 스크롤, 키 미설정 시 graceful 에러, 모바일 대응 레이아웃.
+
+---
+
+## 8. 구현하지 못한 부분 (한계)
+
+- **실데이터 미연동**: 실제 쇼핑몰 API/크롤링 대신 정적 더미 카탈로그 사용.
+- **대화 영속성 없음**: 새로고침하면 대화가 초기화됨(DB/세션 미연동).
+- **RAG 미적용**: 카탈로그가 작아 키워드/필터 검색으로 충분. 리뷰 본문 임베딩 검색은 미구현.
+- **인증·장바구니·결제 없음**: 추천까지만 다루는 프로토타입 범위.
+- **평가/테스트 하네스**: 응답 품질 자동 평가(프롬프트 회귀 테스트 등)는 미구현.
+
+---
+
+## 9. 향후 개선 방향
+
+- 실 커머스 데이터 연동(상품 API) + **리뷰 임베딩 기반 RAG**로 "리뷰 요약·장단점 분석" 강화.
+- 대화/추천 이력 저장(Supabase/Postgres)과 개인화(과거 선호 반영).
+- **에이전트 평가 하네스**: 시나리오별 골든셋으로 도구 선택·추천 품질 회귀 테스트(공고의 "LLM 응답 품질 검증" 항목과 연결).
+- 상품 카드에서 바로 비교 담기 → 비교 트레이 → 장바구니로 이어지는 액션 루프.
+- 임베더블 위젯 형태로 외부 쇼핑몰에 삽입(공고의 "임베더블 AI 위젯" 방향).
+
+---
+
+## 10. AI 개발 도구 활용 여부
+
+본 프로토타입은 **Claude Code(Anthropic)** 를 페어 프로그래밍 도구로 활용해 설계·구현했습니다.
+
+- 활용: 요구사항(공고) 분석, 아키텍처·도구 설계 논의, 보일러플레이트 및 컴포넌트 작성, 타입 오류 디버깅.
+- 직접 결정: 주제 선정, 에이전트의 판단 흐름·도구 인터페이스 설계, 검색 랭킹 정책, UX 구성은 직접 정의하고 검토했습니다.
+
+---
+
+## 프로젝트 구조
+
+```
+app/
+  layout.tsx            # 메타데이터·폰트·레이아웃
+  page.tsx              # 채팅 UI (useChat, 스트리밍, 파트 렌더링)
+  api/chat/route.ts     # 에이전트 라우트 (streamText + 3종 Tool + SSE)
+  globals.css           # 다크 테마 · 디자인 토큰
+components/
+  product-card.tsx      # 상품 카드 / 그리드
+  compare-table.tsx     # 비교표
+  markdown-lite.tsx     # 의존성 없는 경량 마크다운 렌더러
+lib/
+  products.ts           # 더미 카탈로그 + 검색/비교 로직
+  types.ts              # 도메인 타입
+  format.ts             # 가격/평점 포맷 + 표시용 타입
+```
