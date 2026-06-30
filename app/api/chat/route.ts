@@ -6,6 +6,7 @@ import {
   convertToModelMessages,
   type UIMessage,
 } from "ai";
+import { after } from "next/server";
 import { z } from "zod";
 import { listCategories } from "@/lib/products";
 import { searchProductsAuto, searchSource } from "@/lib/semantic-search";
@@ -203,9 +204,10 @@ export async function POST(req: Request) {
       if (id && sessionId) {
         await saveConversation({ id, sessionId, messages: finalMessages });
       }
-      // 다음 질문을 위한 선호 갱신은 응답을 막지 않도록 비동기로(현재 턴 'ready' 지연 방지)
+      // 다음 질문을 위한 선호 갱신: 응답을 지연시키지 않도록 after()로 응답 종료 후 실행.
+      // (서버리스에서 fire-and-forget은 함수가 얼어붙어 중단되므로 after로 함수 수명을 연장)
       if (sessionId) {
-        void updateProfileFromConversation(sessionId, finalMessages, profile);
+        after(() => updateProfileFromConversation(sessionId, finalMessages, profile));
       }
     },
   });
