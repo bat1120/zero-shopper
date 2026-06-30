@@ -22,3 +22,19 @@ create index if not exists conversations_session_updated_idx
 -- RLS 활성화: 정책을 만들지 않으므로 anon/public 키로는 접근 불가.
 -- 서버의 service_role 키는 RLS를 우회하므로 API 라우트에서만 접근됩니다.
 alter table public.conversations enable row level security;
+
+
+-- ────────────────────────────────────────────────────────────────
+-- 개인화 메모리: 세션(익명 사용자)별 선호 프로필
+-- 대화가 끝날 때마다 LLM이 선호를 누적 정리해 저장하고,
+-- 다음 질문 때 시스템 프롬프트에 주입해 더 맞춤한 추천을 한다.
+-- ────────────────────────────────────────────────────────────────
+create table if not exists public.user_profiles (
+  session_id text        primary key,                 -- 익명 세션 ID (conversations.session_id와 동일)
+  profile    jsonb       not null default '{}'::jsonb, -- 구조화된 선호(관심 카테고리·예산 성향·생활 맥락 등)
+  summary    text        not null default '',          -- 프롬프트 주입용 1~2문장 자연어 요약
+  turns      int         not null default 0,           -- 반영한 대화 수
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_profiles enable row level security;

@@ -11,6 +11,12 @@ import { listCategories } from "@/lib/products";
 import { searchProductsAuto, searchSource } from "@/lib/semantic-search";
 import { resolveProduct, resolveProducts } from "@/lib/product-store";
 import { saveConversation } from "@/lib/conversations";
+import {
+  getProfile,
+  profilePromptBlock,
+  updateProfileFromConversation,
+  type ProfileRecord,
+} from "@/lib/user-profile";
 
 // 스트리밍 응답을 위해 Edge 대신 Node 런타임 사용, 최대 실행 시간 여유 확보
 export const runtime = "nodejs";
@@ -19,7 +25,7 @@ export const maxDuration = 30;
 // 환경변수로 모델 교체 가능 (기본값은 tool calling을 안정적으로 지원하는 경량 모델)
 const MODEL = process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini";
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(profile: ProfileRecord | null): string {
   const live = searchSource() === "naver";
   const sourceLine = live
     ? `상품은 **네이버 쇼핑(실시간)** 에서 검색합니다. 특정 카테고리에 국한되지 않고 사용자가 원하는 거의 모든 상품을 찾을 수 있습니다. (예시 카테고리: ${listCategories().join(", ")} 등)`
@@ -61,7 +67,7 @@ ${sourceLine}
 - "N천 원" = N × 1,000원. 도구의 minPrice/maxPrice에는 이렇게 환산한 "원 단위" 정수를 넣으세요. (예: "100만 원 이하" → maxPrice=1000000)
 
 [검색 결과가 비었을 때]
-- search_products가 0건을 반환하면 엉뚱한 상품을 추천하지 말고, "해당 조건에는 상품을 못 찾았다"고 솔직히 말한 뒤 조건(예산 등)을 바꿔볼 것을 제안하세요.${liveNote}`;
+- search_products가 0건을 반환하면 엉뚱한 상품을 추천하지 말고, "해당 조건에는 상품을 못 찾았다"고 솔직히 말한 뒤 조건(예산 등)을 바꿔볼 것을 제안하세요.${liveNote}${profilePromptBlock(profile)}`;
 }
 
 export async function POST(req: Request) {
@@ -81,9 +87,12 @@ export async function POST(req: Request) {
     sessionId,
   }: { messages: UIMessage[]; id?: string; sessionId?: string } = await req.json();
 
+  // 개인화 메모리: 이전 대화들에서 누적된 사용자 선호를 로드해 프롬프트에 주입
+  const profile = sessionId ? await getProfile(sessionId) : null;
+
   const result = streamText({
     model: openai(MODEL),
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(profile),
     messages: await convertToModelMessages(messages),
     // 도구 호출 → 결과 반영 → 추가 도구 호출 또는 최종 답변까지 멀티스텝 루프 허용
     stopWhen: stepCountIs(6),
@@ -193,6 +202,10 @@ export async function POST(req: Request) {
     onFinish: async ({ messages: finalMessages }) => {
       if (id && sessionId) {
         await saveConversation({ id, sessionId, messages: finalMessages });
+      }
+      // 다음 질문을 위한 선호 갱신은 응답을 막지 않도록 비동기로(현재 턴 'ready' 지연 방지)
+      if (sessionId) {
+        void updateProfileFromConversation(sessionId, finalMessages, profile);
       }
     },
   });

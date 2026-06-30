@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, MessageSquare, Trash2, X } from "lucide-react";
+import { Plus, MessageSquare, Trash2, X, Sparkles } from "lucide-react";
 import type { ConversationSummary } from "@/lib/conversations";
 
 export function Sidebar({
@@ -8,19 +8,24 @@ export function Sidebar({
   activeId,
   enabled,
   open,
+  memory,
   onNew,
   onSelect,
   onDelete,
   onClose,
+  onClearMemory,
 }: {
   conversations: ConversationSummary[];
   activeId: string;
   enabled: boolean;
   open: boolean;
+  /** 개인화 메모리 요약 (없으면 미표시) */
+  memory: { summary: string; turns: number } | null;
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
+  onClearMemory: () => void;
 }) {
   return (
     <>
@@ -102,6 +107,26 @@ export function Sidebar({
             </ul>
           )}
         </nav>
+
+        {enabled && memory?.summary ? (
+          <div className="border-t border-white/10 px-3 py-3">
+            <div className="rounded-lg border border-brand-400/20 bg-brand-500/[0.07] p-2.5">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-brand-300">
+                  <Sparkles className="h-3 w-3" /> 맞춤 메모리
+                </span>
+                <button
+                  onClick={onClearMemory}
+                  className="text-[10px] text-white/30 transition hover:text-rose-300"
+                >
+                  지우기
+                </button>
+              </div>
+              <p className="text-[11px] leading-relaxed text-white/55">{memory.summary}</p>
+              <p className="mt-1 text-[10px] text-white/25">대화 {memory.turns}회 학습됨</p>
+            </div>
+          </div>
+        ) : null}
       </aside>
     </>
   );

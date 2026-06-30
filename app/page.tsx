@@ -61,10 +61,23 @@ export default function Home() {
   const [historyEnabled, setHistoryEnabled] = useState(false);
   const [activeId, setActiveId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [memory, setMemory] = useState<{ summary: string; turns: number } | null>(null);
   const prevStatus = useRef(status);
 
   const busy = status === "submitted" || status === "streaming";
   const isEmpty = messages.length === 0;
+
+  const refreshMemory = useCallback(async () => {
+    try {
+      const res = await fetch("/api/profile", {
+        headers: { "x-session-id": sessionIdRef.current },
+      });
+      const data = await res.json();
+      setMemory(data.enabled && data.summary ? { summary: data.summary, turns: data.turns } : null);
+    } catch {
+      /* 무시 */
+    }
+  }, []);
 
   const refreshList = useCallback(async () => {
     try {
@@ -90,7 +103,8 @@ export default function Home() {
     conversationIdRef.current = crypto.randomUUID();
     setActiveId(conversationIdRef.current);
     refreshList();
-  }, [refreshList]);
+    refreshMemory();
+  }, [refreshList, refreshMemory]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -98,11 +112,15 @@ export default function Home() {
 
   // 턴 종료(ready 전환) 시 목록 갱신 — 새 대화 등장/제목 갱신 반영
   useEffect(() => {
-    if (prevStatus.current !== "ready" && status === "ready" && messages.length > 0) {
-      refreshList();
-    }
+    const was = prevStatus.current;
     prevStatus.current = status;
-  }, [status, messages.length, refreshList]);
+    if (was !== "ready" && status === "ready" && messages.length > 0) {
+      refreshList();
+      // 프로필은 응답 직후 백그라운드로 갱신되므로 약간 지연 후 다시 읽음
+      const t = setTimeout(refreshMemory, 2600);
+      return () => clearTimeout(t);
+    }
+  }, [status, messages.length, refreshList, refreshMemory]);
 
   function submit(text: string) {
     const value = text.trim();
@@ -153,6 +171,18 @@ export default function Home() {
     refreshList();
   }
 
+  async function clearMemory() {
+    try {
+      await fetch("/api/profile", {
+        method: "DELETE",
+        headers: { "x-session-id": sessionIdRef.current },
+      });
+    } catch {
+      /* 무시 */
+    }
+    setMemory(null);
+  }
+
   return (
     <div className="flex h-dvh w-full">
       <Sidebar
@@ -160,10 +190,12 @@ export default function Home() {
         activeId={activeId}
         enabled={historyEnabled}
         open={sidebarOpen}
+        memory={memory}
         onNew={newChat}
         onSelect={loadConversation}
         onDelete={removeConversation}
         onClose={() => setSidebarOpen(false)}
+        onClearMemory={clearMemory}
       />
       <div className="mx-auto flex h-dvh w-full min-w-0 max-w-3xl flex-col">
       {/* 헤더 */}
