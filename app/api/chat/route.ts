@@ -188,10 +188,11 @@ export async function POST(req: Request) {
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
     generateMessageId: () => crypto.randomUUID(),
-    // 스트림 종료 시 전체 대화(원본 + 응답)를 Supabase에 저장 (미설정 시 no-op)
-    onFinish: ({ messages: finalMessages }) => {
+    // 스트림 종료 시 전체 대화(원본 + 응답)를 Supabase에 저장 (미설정 시 no-op).
+    // await 하여 저장 완료 후 스트림이 닫히도록 → 클라이언트의 'ready' = 저장 완료 보장.
+    onFinish: async ({ messages: finalMessages }) => {
       if (id && sessionId) {
-        void saveConversation({ id, sessionId, messages: finalMessages });
+        await saveConversation({ id, sessionId, messages: finalMessages });
       }
     },
   });
