@@ -578,16 +578,52 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/\s+/g, "");
 }
 
+/**
+ * 동의어 그룹. 사용자가 쓰는 일상어를 카탈로그의 태그/요약 용어와 연결한다.
+ * 예: "조용히" → 카탈로그의 "저소음" 과 매칭되게.
+ * 각 항목은 norm() 적용 후(공백 제거·소문자) 기준으로 비교한다.
+ */
+const SYNONYM_GROUPS: string[][] = [
+  ["저소음", "조용", "조용히", "무소음", "사일런트", "정숙"],
+  ["노이즈캔슬링", "노캔", "소음차단", "소음", "노이즈"],
+  ["가벼움", "가벼운", "가볍", "경량", "라이트"],
+  ["가성비", "저렴", "싼", "합리적", "가격", "저가"],
+  ["게이밍", "게임", "게임용", "gaming"],
+  ["고성능", "고사양", "강력", "빠른", "고스펙"],
+  ["입문", "초보", "처음", "입문용", "비기너"],
+  ["방수", "방진", "생활방수", "땀"],
+  ["휴대", "휴대성", "이동", "들고다니"],
+  ["사무", "오피스", "업무", "사무실", "회사"],
+  ["운동", "러닝", "헬스", "조깅", "달리기"],
+  ["대화면", "큰화면", "큰", "대형"],
+  ["프리미엄", "고급", "최고급"],
+];
+
+const SYNONYM_LOOKUP = SYNONYM_GROUPS.map((g) => g.map(norm));
+
+/** 토큰을 동의어로 확장 (자기 자신 포함). norm 적용된 토큰을 받는다. */
+function expandToken(token: string): string[] {
+  const out = new Set<string>([token]);
+  for (const g of SYNONYM_LOOKUP) {
+    if (g.some((term) => term.length >= 2 && (token.includes(term) || term.includes(token)))) {
+      g.forEach((term) => out.add(term));
+    }
+  }
+  return [...out];
+}
+
 /** 상품을 검색어/필터 기준으로 점수화해 정렬·반환 */
 export function searchProducts(params: SearchParams): SearchResult {
   const { keywords, category, minPrice, maxPrice, useCase, sortBy = "relevance", limit = 6 } = params;
 
-  const kw = keywords ? norm(keywords).split(/,|·|\//).filter(Boolean) : [];
-  const tokens = kw.length
-    ? kw
-    : keywords
-      ? [norm(keywords)]
-      : [];
+  // 공백·구분자 단위로 먼저 쪼갠 뒤 각 단어를 norm (norm이 공백을 없애므로
+  // 다중어 키워드가 한 덩어리로 뭉치는 문제를 방지).
+  const tokens = keywords
+    ? keywords
+        .split(/[\s,·/]+/)
+        .map(norm)
+        .filter(Boolean)
+    : [];
 
   let scored = PRODUCTS.map((p) => {
     let score = 0;
@@ -605,9 +641,11 @@ export function searchProducts(params: SearchParams): SearchResult {
     const haystack = norm(
       [p.name, p.brand, p.category, p.summary, ...p.tags, ...p.useCases].join(" ")
     );
+    // 사용자 토큰별로 동의어까지 확장해 매칭 (그룹 단위로 한 번만 가점 → 과대 점수 방지)
     for (const t of tokens) {
       if (!t) continue;
-      if (haystack.includes(t)) score += 3;
+      const variants = expandToken(t);
+      if (variants.some((v) => v && haystack.includes(v))) score += 3;
     }
 
     // 평점 가중 (동점 정렬용 소량 반영)
