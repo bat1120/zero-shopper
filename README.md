@@ -40,6 +40,7 @@
 - ⚡ **실시간 스트리밍 UI**: SSE 기반으로 답변이 타이핑되듯 출력
 - 🃏 **결과의 서비스화**: 도구 결과를 텍스트로 흘리지 않고 **상품 카드 · 비교표**로 렌더링
 - ❓ **부족한 정보는 역질문**: 추천에 결정적인 정보(예산·용도)가 없으면 한 가지만 되물음
+- 💾 **대화 이력 저장 (Supabase)**: 매 턴 대화를 저장하고, 사이드바에서 과거 대화를 열람·이어가기·삭제 (익명 세션 기반, 미설정 시 자동 비활성화)
 
 ---
 
@@ -52,6 +53,7 @@
 | AI / 에이전트 | **Vercel AI SDK v5 (`ai`, `@ai-sdk/openai`, `@ai-sdk/react`)** |
 | LLM | **OpenAI (기본 `gpt-4.1-mini`)** · Function/Tool Calling |
 | 상품 데이터 | **네이버 쇼핑 검색 API** (실시간) · 미설정 시 더미 카탈로그로 폴백 |
+| 대화 이력 | **Supabase (Postgres)** · 익명 세션별 저장/조회 · 미설정 시 자동 비활성화 |
 | 검색(RAG) | **OpenAI `text-embedding-3-small` 임베딩 + 코사인 유사도** · 의미 재랭킹 / 의미+어휘 하이브리드 |
 | 검증 | **Zod** (도구 입력 스키마) |
 | 스트리밍 | **SSE** (`toUIMessageStreamResponse` / `useChat`) |
@@ -85,10 +87,15 @@ npm run build && npm run start
 | `OPENAI_API_KEY` | OpenAI API 키 (필수) |
 | `NAVER_CLIENT_ID` | 네이버 개발자센터 「검색」 API 클라이언트 ID (선택). 설정하면 실시간 네이버 쇼핑 검색 사용 |
 | `NAVER_CLIENT_SECRET` | 네이버 검색 API 클라이언트 시크릿 (선택) |
+| `SUPABASE_URL` | Supabase 프로젝트 URL (선택). 설정하면 대화 이력 저장 활성화 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role 키 (선택, **서버 전용** — 클라이언트 노출 금지) |
 | `OPENAI_CHAT_MODEL` | 사용할 모델 (선택, 기본 `gpt-4.1-mini`). 비용을 더 아끼려면 `gpt-4o-mini` 로 교체 가능 |
 
 > - `OPENAI_API_KEY`가 없으면 `/api/chat`이 친절한 안내 메시지를 반환하므로 화면이 깨지지 않습니다.
 > - 네이버 키가 **없으면** 자동으로 내장 더미 카탈로그(34개 상품) RAG 검색으로 폴백합니다. 즉 네이버 키 없이도 데모가 동작합니다.
+> - Supabase 키가 **없으면** 대화 이력 기능만 비활성화되고(사이드바는 "이력 저장 꺼짐" 표시) 나머지는 그대로 동작합니다.
+
+**Supabase 설정(대화 이력)**: ① [supabase.com](https://supabase.com)에서 프로젝트 생성 → ② SQL Editor에 [`docs/supabase-schema.sql`](docs/supabase-schema.sql) 붙여넣고 실행 → ③ Project Settings > API에서 `URL`과 `service_role` 키를 복사해 위 환경변수에 설정.
 
 ---
 
@@ -140,7 +147,8 @@ npm run build && npm run start
 - **사전 RAG 색인 (폴백 경로)**: 더미 상품 임베딩은 빌드 타임에 미리 생성해 `lib/product-embeddings.json`에 저장(`scripts/build-embeddings.ts`). 런타임에는 **쿼리만 임베딩**해 코사인 유사도를 계산하고 **의미 유사도(45%) + 어휘 점수(55%)**를 합산해 정렬.
 - **라이브 상품 캐시**: 네이버 상품은 영속 저장소가 없어 한 요청 안에서 검색→비교/상세 도구가 ID로 다시 찾을 수 있도록 `lib/product-store.ts` 의 인메모리 캐시에 보관.
 - **토큰 최적화**: 도구가 LLM에 돌려주는 결과는 핵심 필드로 슬림화. UI는 동일 `output`을 받아 카드/표를 그립니다.
-- **상태**: 대화 상태는 `useChat`이 클라이언트에서 관리(서버는 무상태). 각 메시지는 `parts`(텍스트/도구 호출/도구 결과)로 구성되어 파트 단위로 렌더링.
+- **상태**: 대화 상태는 `useChat`이 클라이언트에서 관리. 각 메시지는 `parts`(텍스트/도구 호출/도구 결과)로 구성되어 파트 단위로 렌더링.
+- **대화 이력(Supabase)**: 클라이언트가 익명 세션 ID(localStorage)와 대화 ID를 transport body에 실어 보내고, `/api/chat`의 `onFinish`에서 전체 `UIMessage[]`를 Supabase `conversations` 테이블에 upsert. 사이드바는 `/api/conversations`(목록)·`/api/conversations/[id]`(로드/삭제)를 호출. 쓰기·읽기는 모두 서버(service_role)로만 이뤄지고 RLS로 공개 접근을 차단(브라우저는 Supabase에 직접 접속하지 않음).
 
 ---
 
@@ -162,7 +170,7 @@ npm run build && npm run start
 - **라이브 상품 메타데이터 한계**: 네이버 쇼핑 응답에는 평점·상세 스펙·장단점이 없어, 라이브 모드의 카드/비교표는 가격·판매처·이미지·구매 링크 위주로 표시됨(더미 카탈로그는 평점·장단점까지 제공).
 - **정량 평가 범위**: 더미 경로는 고정 라벨 기반 Top-1/Recall@3/MRR로, 라이브 경로는 **LLM-as-judge** 기반 nDCG/Precision/MRR로 측정. 다만 라이브 평가는 심판이 단일 LLM이고 네이버 데이터가 시점에 따라 변해 절대 수치 재현성은 제한적(상대 비교 위주).
 - **라이브 캐시 휘발성**: 라이브 상품은 인메모리 캐시(요청/프로세스 수명)라 영속 저장소·벡터 DB(pgvector 등) 연동은 미구현.
-- **대화 영속성 없음**: 새로고침하면 대화가 초기화됨(DB/세션 미연동).
+- **대화 이력은 익명 세션 기준**: 로그인이 없어 localStorage 세션 ID로 구분 → 브라우저/기기를 바꾸면 이력이 따라가지 않음(향후 인증 연동 시 사용자 단위로 확장 가능).
 - **인증·장바구니·결제 없음**: 추천까지만 다루는 프로토타입 범위.
 
 ---
@@ -191,18 +199,23 @@ npm run build && npm run start
 ```
 app/
   layout.tsx                # 메타데이터·폰트·레이아웃
-  page.tsx                  # 채팅 UI (useChat, 스트리밍, 파트 렌더링)
-  api/chat/route.ts         # 에이전트 라우트 (streamText + 3종 Tool + SSE)
+  page.tsx                  # 채팅 UI (useChat, 스트리밍, 사이드바, 세션/대화 관리)
+  api/chat/route.ts         # 에이전트 라우트 (streamText + 3종 Tool + SSE + 이력 저장)
+  api/conversations/route.ts        # 대화 목록 (GET)
+  api/conversations/[id]/route.ts   # 대화 로드(GET)·삭제(DELETE)
   globals.css               # 다크 테마 · 디자인 토큰
 components/
   product-card.tsx          # 상품 카드 / 그리드 (클릭 → 상세)
   compare-table.tsx         # 비교표
+  sidebar.tsx               # 대화 이력 사이드바 (목록·새 대화·삭제)
   markdown-lite.tsx         # 의존성 없는 경량 마크다운 렌더러
 lib/
   naver-shopping.ts         # 네이버 쇼핑 검색 API 클라이언트 (실상품 → Product 매핑)
   semantic-search.ts        # 검색 진입점: 라이브 재랭킹 / 더미 하이브리드 RAG · 자동 전환
   product-store.ts          # 라이브 상품 인메모리 캐시 (비교·상세 도구용)
   products.ts               # 더미 카탈로그 + 어휘 검색/필터/비교 로직 (폴백)
+  supabase.ts               # 서버 전용 Supabase 클라이언트 (service_role)
+  conversations.ts          # 대화 저장/목록/로드/삭제 데이터 레이어
   embed-text.ts             # 상품/쿼리 임베딩 텍스트 빌더
   product-embeddings.json   # 사전 생성된 더미 상품 임베딩 벡터
   types.ts · format.ts      # 도메인 타입 · 표시 포맷
@@ -211,6 +224,7 @@ scripts/
   eval-search.ts            # 더미 경로 평가 하네스 (Top-1/Recall@3/MRR)
   eval-live.ts              # 라이브 경로 평가 하네스 (LLM-as-judge · nDCG/P@3/MRR)
 docs/
+  supabase-schema.sql       # 대화 이력 테이블 스키마 (Supabase SQL Editor에서 실행)
   search-eval.md            # 검색 품질 정량 평가 결과
   demo-script.md            # 시연 영상 대본
 ```

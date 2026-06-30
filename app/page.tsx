@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Send, Square, Search, Scale, Sparkles } from "lucide-react";
+import { Send, Square, Search, Scale, Sparkles, Menu } from "lucide-react";
 import { ProductCardGrid, ProductCard } from "@/components/product-card";
 import { CompareTable } from "@/components/compare-table";
 import { MarkdownLite } from "@/components/markdown-lite";
+import { Sidebar } from "@/components/sidebar";
 import type { ProductCardData, CompareItem } from "@/lib/format";
+import type { ConversationSummary } from "@/lib/conversations";
 
 const SUGGESTIONS = [
   "캠핑 처음인데 10만 원으로 살 만한 2인 텐트 추천해줘",
@@ -32,18 +34,75 @@ function ToolRunningChip({ label }: { label: string }) {
 }
 
 export default function Home() {
-  const { messages, sendMessage, status, error, stop } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
-  });
+  const sessionIdRef = useRef<string>("");
+  const conversationIdRef = useRef<string>("");
+
+  // transport는 한 번만 생성 — body에 현재 대화/세션 ID를 ref로 주입
+  const [transport] = useState(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        prepareSendMessagesRequest: ({ messages }) => ({
+          body: {
+            messages,
+            id: conversationIdRef.current,
+            sessionId: sessionIdRef.current,
+          },
+        }),
+      })
+  );
+
+  const { messages, sendMessage, status, error, stop, setMessages } = useChat({ transport });
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 대화 이력 (사이드바)
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyEnabled, setHistoryEnabled] = useState(false);
+  const [activeId, setActiveId] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const prevStatus = useRef(status);
 
   const busy = status === "submitted" || status === "streaming";
   const isEmpty = messages.length === 0;
 
+  const refreshList = useCallback(async () => {
+    try {
+      const res = await fetch("/api/conversations", {
+        headers: { "x-session-id": sessionIdRef.current },
+      });
+      const data = await res.json();
+      setHistoryEnabled(Boolean(data.enabled));
+      setConversations(data.conversations ?? []);
+    } catch {
+      /* 무시 */
+    }
+  }, []);
+
+  // 세션 ID(localStorage) + 새 대화 ID 초기화
+  useEffect(() => {
+    let sid = localStorage.getItem("zeroshopper_session");
+    if (!sid) {
+      sid = crypto.randomUUID();
+      localStorage.setItem("zeroshopper_session", sid);
+    }
+    sessionIdRef.current = sid;
+    conversationIdRef.current = crypto.randomUUID();
+    setActiveId(conversationIdRef.current);
+    refreshList();
+  }, [refreshList]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, status]);
+
+  // 턴 종료(ready 전환) 시 목록 갱신 — 새 대화 등장/제목 갱신 반영
+  useEffect(() => {
+    if (prevStatus.current !== "ready" && status === "ready" && messages.length > 0) {
+      refreshList();
+    }
+    prevStatus.current = status;
+  }, [status, messages.length, refreshList]);
 
   function submit(text: string) {
     const value = text.trim();
@@ -52,11 +111,71 @@ export default function Home() {
     setInput("");
   }
 
+  function newChat() {
+    if (busy) stop();
+    conversationIdRef.current = crypto.randomUUID();
+    setActiveId(conversationIdRef.current);
+    setMessages([]);
+    setSidebarOpen(false);
+  }
+
+  async function loadConversation(id: string) {
+    if (busy || id === conversationIdRef.current) {
+      setSidebarOpen(false);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        headers: { "x-session-id": sessionIdRef.current },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      conversationIdRef.current = id;
+      setActiveId(id);
+      setMessages(data.messages ?? []);
+    } catch {
+      /* 무시 */
+    } finally {
+      setSidebarOpen(false);
+    }
+  }
+
+  async function removeConversation(id: string) {
+    try {
+      await fetch(`/api/conversations/${id}`, {
+        method: "DELETE",
+        headers: { "x-session-id": sessionIdRef.current },
+      });
+    } catch {
+      /* 무시 */
+    }
+    if (id === conversationIdRef.current) newChat();
+    refreshList();
+  }
+
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-3xl flex-col">
+    <div className="flex h-dvh w-full">
+      <Sidebar
+        conversations={conversations}
+        activeId={activeId}
+        enabled={historyEnabled}
+        open={sidebarOpen}
+        onNew={newChat}
+        onSelect={loadConversation}
+        onDelete={removeConversation}
+        onClose={() => setSidebarOpen(false)}
+      />
+      <div className="mx-auto flex h-dvh w-full min-w-0 max-w-3xl flex-col">
       {/* 헤더 */}
       <header className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="rounded-md p-1.5 text-white/50 hover:bg-white/10 hover:text-white md:hidden"
+            aria-label="대화 이력 열기"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-black text-white">
             Z
           </div>
@@ -146,6 +265,7 @@ export default function Home() {
         <p className="mt-2 text-center text-[10px] text-white/25">
           네이버 쇼핑 검색 + AI 추천 데모입니다. 가격·재고는 실시간과 다를 수 있어요.
         </p>
+      </div>
       </div>
     </div>
   );

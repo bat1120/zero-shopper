@@ -10,6 +10,7 @@ import { z } from "zod";
 import { listCategories } from "@/lib/products";
 import { searchProductsAuto, searchSource } from "@/lib/semantic-search";
 import { resolveProduct, resolveProducts } from "@/lib/product-store";
+import { saveConversation } from "@/lib/conversations";
 
 // 스트리밍 응답을 위해 Edge 대신 Node 런타임 사용, 최대 실행 시간 여유 확보
 export const runtime = "nodejs";
@@ -74,7 +75,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json();
+  const {
+    messages,
+    id,
+    sessionId,
+  }: { messages: UIMessage[]; id?: string; sessionId?: string } = await req.json();
 
   const result = streamText({
     model: openai(MODEL),
@@ -180,5 +185,14 @@ export async function POST(req: Request) {
     },
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({
+    originalMessages: messages,
+    generateMessageId: () => crypto.randomUUID(),
+    // 스트림 종료 시 전체 대화(원본 + 응답)를 Supabase에 저장 (미설정 시 no-op)
+    onFinish: ({ messages: finalMessages }) => {
+      if (id && sessionId) {
+        void saveConversation({ id, sessionId, messages: finalMessages });
+      }
+    },
+  });
 }
