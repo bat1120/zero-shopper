@@ -6,7 +6,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| **배포 URL** | _(배포 후 기입)_ https://… |
+| **배포 URL** | **https://zero-shopper.vercel.app** |
 | **GitHub** | https://github.com/bat1120/zero-shopper |
 | **시연 영상** | _(선택, 3분 이내 URL)_ |
 | **테스트 계정** | 별도 로그인 없음 — 접속 즉시 사용 가능 |
