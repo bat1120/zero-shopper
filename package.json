@@ -8,7 +8,9 @@
     "start": "next start",
     "embeddings": "tsx scripts/build-embeddings.ts",
     "eval": "tsx scripts/eval-search.ts",
-    "eval:live": "tsx scripts/eval-live.ts"
+    "eval:live": "tsx scripts/eval-live.ts",
+    "test:e2e": "node scripts/test-harness.mjs",
+    "test:e2e:llm": "node scripts/test-harness.mjs --llm"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.3",

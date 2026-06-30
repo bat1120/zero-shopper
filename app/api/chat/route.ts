@@ -10,7 +10,8 @@ import { after } from "next/server";
 import { z } from "zod";
 import { listCategories } from "@/lib/products";
 import { searchProductsAuto, searchSource } from "@/lib/semantic-search";
-import { resolveProduct, resolveProducts } from "@/lib/product-store";
+import { resolveProduct, resolveProducts, rememberProducts } from "@/lib/product-store";
+import type { Product } from "@/lib/types";
 import { saveConversation } from "@/lib/conversations";
 import {
   getProfile,
@@ -25,6 +26,49 @@ export const maxDuration = 30;
 
 // 환경변수로 모델 교체 가능 (기본값은 tool calling을 안정적으로 지원하는 경량 모델)
 const MODEL = process.env.OPENAI_CHAT_MODEL ?? "gpt-4.1-mini";
+
+/**
+ * 이전 턴의 search_products 결과(클라이언트가 함께 보낸 대화 이력)에서 라이브 상품을
+ * product-store에 복원한다. 서버리스 인스턴스가 바뀌어 인메모리 캐시가 비어 있어도,
+ * compare_products/get_product_detail/decision_guide가 과거 턴의 상품 id를 다시 찾을 수 있게 한다.
+ * (라이브 nv- 상품은 정적 카탈로그에 없으므로 이 복원이 없으면 크로스턴 비교가 깨진다.)
+ */
+function rehydrateProductStore(msgs: UIMessage[]): void {
+  const seen: Product[] = [];
+  for (const m of msgs) {
+    for (const part of m.parts ?? []) {
+      const p = part as {
+        type?: string;
+        state?: string;
+        output?: { products?: Partial<Product>[] };
+      };
+      if (p.type !== "tool-search_products" || p.state !== "output-available") continue;
+      for (const o of p.output?.products ?? []) {
+        if (!o.id || !o.name) continue;
+        seen.push({
+          id: o.id,
+          name: o.name,
+          brand: o.brand ?? "",
+          category: o.category ?? "",
+          price: typeof o.price === "number" ? o.price : 0,
+          rating: o.rating,
+          reviewCount: o.reviewCount,
+          emoji: o.emoji,
+          imageUrl: o.imageUrl,
+          link: o.link,
+          mall: o.mall,
+          tags: o.tags ?? [],
+          useCases: o.useCases ?? [],
+          specs: o.specs ?? {},
+          pros: o.pros ?? [],
+          cons: o.cons ?? [],
+          summary: o.summary ?? "",
+        });
+      }
+    }
+  }
+  if (seen.length) rememberProducts(seen);
+}
 
 function buildSystemPrompt(profile: ProfileRecord | null): string {
   const live = searchSource() === "naver";
@@ -108,6 +152,10 @@ export async function POST(req: Request) {
   } catch {
     return Response.json({ error: "messages 형식이 올바르지 않습니다." }, { status: 400 });
   }
+
+  // 이전 턴의 검색 결과(라이브 상품)를 product-store에 복원 — 콜드 인스턴스에서도
+  // 과거 id로 compare/detail/decision 도구가 동작하도록 (재검색 없이 비교 요청 대비)
+  rehydrateProductStore(messages);
 
   // 개인화 메모리: 이전 대화들에서 누적된 사용자 선호를 로드해 프롬프트에 주입
   const profile = sessionId ? await getProfile(sessionId) : null;

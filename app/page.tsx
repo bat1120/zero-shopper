@@ -38,6 +38,7 @@ export default function Home() {
   const sessionIdRef = useRef<string>("");
   const conversationIdRef = useRef<string>("");
   const loadingConvRef = useRef(false); // 과거 대화 로딩 중에는 전송 차단(레이스 방지)
+  const loadGenRef = useRef(0); // 로딩 세대 토큰 — 진행 중 로딩을 무효화해 늦게 온 응답이 상태를 덮어쓰지 못하게
 
   // transport는 한 번만 생성 — body에 현재 대화/세션 ID를 ref로 주입
   const [transport] = useState(
@@ -137,6 +138,8 @@ export default function Home() {
 
   function newChat() {
     if (busy) stop();
+    loadGenRef.current++; // 진행 중인 과거 대화 로딩 무효화
+    loadingConvRef.current = false;
     conversationIdRef.current = crypto.randomUUID();
     setActiveId(conversationIdRef.current);
     setMessages([]);
@@ -148,6 +151,7 @@ export default function Home() {
       setSidebarOpen(false);
       return;
     }
+    const gen = ++loadGenRef.current;
     loadingConvRef.current = true;
     try {
       const res = await fetch(`/api/conversations/${id}`, {
@@ -155,13 +159,15 @@ export default function Home() {
       });
       if (!res.ok) return;
       const data = await res.json();
+      // await 사이에 새 대화/다른 로딩이 시작됐으면 이 응답은 폐기 (오래된 상태 덮어쓰기 방지)
+      if (gen !== loadGenRef.current) return;
       conversationIdRef.current = id;
       setActiveId(id);
       setMessages(data.messages ?? []);
     } catch {
       /* 무시 */
     } finally {
-      loadingConvRef.current = false;
+      if (gen === loadGenRef.current) loadingConvRef.current = false;
       setSidebarOpen(false);
     }
   }

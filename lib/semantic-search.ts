@@ -1,7 +1,7 @@
 import { embed, embedMany, cosineSimilarity } from "ai";
 import { openai } from "@ai-sdk/openai";
 import type { Product, SearchParams, SearchResult } from "./types";
-import { getCandidates, lexicalScore, tokenize, searchProducts } from "./products";
+import { getCandidates, lexicalScore, tokenize, searchProducts, clampLimit } from "./products";
 import { queryEmbeddingText, productEmbeddingText } from "./embed-text";
 import { searchNaver, hasNaverCredentials } from "./naver-shopping";
 import { rememberProducts } from "./product-store";
@@ -89,29 +89,34 @@ export async function searchProductsSemantic(params: SearchParams): Promise<Sear
   // 임베딩 불가 → 어휘 검색 폴백
   if (!queryVec) return searchProducts(params);
 
-  const tokens = tokenize(params.keywords, "enhanced");
-  const rows = candidates.map((p) => ({
-    p,
-    sim: VECTORS[p.id] ? cosineSimilarity(queryVec, VECTORS[p.id]) : 0,
-    lex: lexicalScore(p, params, tokens, "enhanced"),
-  }));
+  try {
+    const tokens = tokenize(params.keywords, "enhanced");
+    const rows = candidates.map((p) => ({
+      p,
+      sim: VECTORS[p.id] ? cosineSimilarity(queryVec, VECTORS[p.id]) : 0,
+      lex: lexicalScore(p, params, tokens, "enhanced"),
+    }));
 
-  const normSim = normalize(rows.map((r) => r.sim));
-  const normLex = normalize(rows.map((r) => r.lex));
+    const normSim = normalize(rows.map((r) => r.sim));
+    const normLex = normalize(rows.map((r) => r.lex));
 
-  // 의미 + 어휘 가중 합산 (어휘에는 카테고리/용도/태그/평점 신호가 들어있음).
-  // 기본 45:55 — 평가 셋에서 Top-1 100%를 달성하는 지점(의미 검색의 일반화 + 어휘 정밀도 결합).
-  const SEM_W_RAW = Number(process.env.SEARCH_SEM_WEIGHT);
-  // 비정상 설정값(NaN/범위초과)은 기본값 0.45로 폴백 — 랭킹이 NaN으로 깨지지 않도록
-  const SEM_W = Number.isFinite(SEM_W_RAW) && SEM_W_RAW >= 0 && SEM_W_RAW <= 1 ? SEM_W_RAW : 0.45;
-  const LEX_W = 1 - SEM_W;
-  const ranked = rows
-    .map((r) => ({ p: r.p, score: SEM_W * normSim(r.sim) + LEX_W * normLex(r.lex) }))
-    .sort((a, b) => b.score - a.score);
+    // 의미 + 어휘 가중 합산 (어휘에는 카테고리/용도/태그/평점 신호가 들어있음).
+    // 기본 45:55 — 평가 셋(dev)에서 튜닝된 값. README/eval 문서에 in-sample 임을 명시.
+    const SEM_W_RAW = Number(process.env.SEARCH_SEM_WEIGHT);
+    // 비정상 설정값(NaN/범위초과)은 기본값 0.45로 폴백 — 랭킹이 NaN으로 깨지지 않도록
+    const SEM_W = Number.isFinite(SEM_W_RAW) && SEM_W_RAW >= 0 && SEM_W_RAW <= 1 ? SEM_W_RAW : 0.45;
+    const LEX_W = 1 - SEM_W;
+    const ranked = rows
+      .map((r) => ({ p: r.p, score: SEM_W * normSim(r.sim) + LEX_W * normLex(r.lex) }))
+      .sort((a, b) => b.score - a.score);
 
-  const limit = Math.max(1, Math.min(params.limit ?? 6, 12));
-  const products: Product[] = ranked.slice(0, limit).map((r) => r.p);
-  return { count: products.length, products };
+    const limit = clampLimit(params.limit);
+    const products: Product[] = ranked.slice(0, limit).map((r) => r.p);
+    return { count: products.length, products };
+  } catch {
+    // 임베딩 차원 drift 등으로 코사인 계산이 throw하면 어휘 검색으로 안전 폴백
+    return searchProducts(params);
+  }
 }
 
 /**
@@ -130,8 +135,20 @@ export async function semanticSimilarities(
       values: [queryText, ...missing.map(productEmbeddingText)],
     });
     const qv = embeddings[0];
+    // 이번 요청에 필요한 벡터를 먼저 로컬 맵에 모은다.
+    // (rememberEmbedding의 FIFO 축출이 방금 쓸 캐시 적중 벡터를 지우는 레이스 방지)
+    const vecById = new Map<string, number[]>();
+    for (const p of products) {
+      const cached = liveEmbedCache.get(p.id);
+      if (cached) vecById.set(p.id, cached);
+    }
+    missing.forEach((p, i) => vecById.set(p.id, embeddings[i + 1]));
+    // 로컬 맵을 다 채운 뒤에 캐시에 반영(축출이 일어나도 안전)
     missing.forEach((p, i) => rememberEmbedding(p.id, embeddings[i + 1]));
-    return products.map((p) => cosineSimilarity(qv, liveEmbedCache.get(p.id) as number[]));
+    return products.map((p) => {
+      const v = vecById.get(p.id);
+      return v ? cosineSimilarity(qv, v) : 0;
+    });
   } catch {
     return null;
   }
@@ -149,7 +166,7 @@ export async function searchProductsLive(params: SearchParams): Promise<SearchRe
   rememberProducts(candidates);
   if (candidates.length === 0) return { count: 0, products: [] };
 
-  const limit = Math.max(1, Math.min(params.limit ?? 6, 12));
+  const limit = clampLimit(params.limit);
 
   if (candidates.length > 1) {
     const sims = await semanticSimilarities(queryEmbeddingText(params), candidates);

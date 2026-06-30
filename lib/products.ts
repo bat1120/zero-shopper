@@ -682,7 +682,8 @@ export function lexicalScore(
   return score;
 }
 
-function clampLimit(limit?: number): number {
+/** 결과 개수 클램프 (기본 6, 최대 12) — 검색 경로 공통 사용 */
+export function clampLimit(limit?: number): number {
   return Math.max(1, Math.min(limit ?? 6, 12));
 }
 
