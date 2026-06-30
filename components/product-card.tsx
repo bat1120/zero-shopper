@@ -1,8 +1,37 @@
+import { ArrowRight } from "lucide-react";
 import { formatPrice, formatRating, type ProductCardData } from "@/lib/format";
 
-export function ProductCard({ p }: { p: ProductCardData }) {
+export function ProductCard({
+  p,
+  onAsk,
+}: {
+  p: ProductCardData;
+  /** 카드를 클릭하면 에이전트에게 보낼 질문을 트리거 (없으면 클릭 불가) */
+  onAsk?: (text: string) => void;
+}) {
+  const clickable = Boolean(onAsk);
+  const ask = () => onAsk?.(`'${p.name}' 더 자세히 알려줘`);
+
   return (
-    <div className="group flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 transition-colors hover:border-brand-400/40 hover:bg-white/[0.06]">
+    <div
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? ask : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                ask();
+              }
+            }
+          : undefined
+      }
+      className={
+        "group relative flex gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 transition-colors hover:border-brand-400/40 hover:bg-white/[0.06]" +
+        (clickable ? " cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400/50" : "")
+      }
+    >
       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600/30 to-brand-400/10 text-2xl">
         {p.emoji ?? "🛍️"}
       </div>
@@ -33,11 +62,22 @@ export function ProductCard({ p }: { p: ProductCardData }) {
           </div>
         ) : null}
       </div>
+      {clickable && (
+        <span className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-0.5 text-[10px] text-white/0 transition-colors group-hover:text-brand-300">
+          자세히 <ArrowRight className="h-3 w-3" />
+        </span>
+      )}
     </div>
   );
 }
 
-export function ProductCardGrid({ products }: { products: ProductCardData[] }) {
+export function ProductCardGrid({
+  products,
+  onAsk,
+}: {
+  products: ProductCardData[];
+  onAsk?: (text: string) => void;
+}) {
   if (!products?.length) {
     return (
       <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/50">
@@ -48,7 +88,7 @@ export function ProductCardGrid({ products }: { products: ProductCardData[] }) {
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       {products.map((p) => (
-        <ProductCard key={p.id} p={p} />
+        <ProductCard key={p.id} p={p} onAsk={onAsk} />
       ))}
     </div>
   );

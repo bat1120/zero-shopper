@@ -77,13 +77,18 @@ export default function Home() {
         ) : (
           <div className="space-y-5 py-4">
             {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+              <MessageBubble key={m.id} message={m} onAsk={submit} />
             ))}
             {status === "submitted" && (
               <div className="flex justify-start">
                 <ToolRunningChip label="생각하는 중…" />
               </div>
             )}
+            {!busy &&
+              messages.length > 0 &&
+              messages[messages.length - 1].role === "assistant" && (
+                <FollowUps onPick={submit} />
+              )}
           </div>
         )}
 
@@ -174,9 +179,38 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
+// 추천 직후 대화를 자연스럽게 잇는 후속 질문 칩
+const FOLLOW_UPS = [
+  "더 저렴한 대안 있어?",
+  "방금 추천한 것들 비교해줘",
+  "가장 인기 많은 걸로 추천해줘",
+];
+
+function FollowUps({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 pl-1 animate-fade-up">
+      {FOLLOW_UPS.map((f) => (
+        <button
+          key={f}
+          onClick={() => onPick(f)}
+          className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/60 transition hover:border-brand-400/40 hover:bg-white/[0.06] hover:text-white"
+        >
+          {f}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type ChatMessage = ReturnType<typeof useChat>["messages"][number];
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  onAsk,
+}: {
+  message: ChatMessage;
+  onAsk: (text: string) => void;
+}) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -197,7 +231,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     <div className="flex justify-start animate-fade-up">
       <div className="w-full max-w-[92%] space-y-2">
         {message.parts.map((part, i) => (
-          <PartView key={i} part={part} />
+          <PartView key={i} part={part} onAsk={onAsk} />
         ))}
       </div>
     </div>
@@ -205,7 +239,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function PartView({ part }: { part: any }) {
+function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void }) {
   // 1) 일반 텍스트
   if (part.type === "text") {
     if (!part.text?.trim()) return null;
@@ -223,7 +257,7 @@ function PartView({ part }: { part: any }) {
       return (
         <div className="space-y-1.5">
           <ToolLabel icon={<Search className="h-3.5 w-3.5" />} text={`상품 ${products.length}개 검색됨`} />
-          <ProductCardGrid products={products} />
+          <ProductCardGrid products={products} onAsk={onAsk} />
         </div>
       );
     }
@@ -247,7 +281,7 @@ function PartView({ part }: { part: any }) {
   // 4) 단일 상세 도구
   if (part.type === "tool-get_product_detail") {
     if (part.state === "output-available" && part.output?.found) {
-      return <ProductCard p={part.output.product as ProductCardData} />;
+      return <ProductCard p={part.output.product as ProductCardData} onAsk={onAsk} />;
     }
     if (part.state !== "output-available") {
       return <ToolRunningChip label="상세 정보를 불러오는 중…" />;
