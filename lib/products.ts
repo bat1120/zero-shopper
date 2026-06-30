@@ -612,33 +612,62 @@ function expandToken(token: string): string[] {
   return [...out];
 }
 
-/** 상품을 검색어/필터 기준으로 점수화해 정렬·반환 */
-export function searchProducts(params: SearchParams): SearchResult {
-  const { keywords, category, minPrice, maxPrice, useCase, sortBy = "relevance", limit = 6 } = params;
+/** 어휘 점수 계산 모드. baseline=초기 버전(동의어/태그가중 없음), enhanced=현재 버전 */
+export type LexicalMode = "baseline" | "enhanced";
 
-  // 공백·구분자 단위로 먼저 쪼갠 뒤 각 단어를 norm (norm이 공백을 없애므로
-  // 다중어 키워드가 한 덩어리로 뭉치는 문제를 방지).
-  const tokens = keywords
-    ? keywords
-        .split(/[\s,·/]+/)
-        .map(norm)
-        .filter(Boolean)
-    : [];
+/** 키워드를 토큰으로 분리 */
+export function tokenize(keywords: string | undefined, mode: LexicalMode = "enhanced"): string[] {
+  if (!keywords) return [];
+  if (mode === "baseline") {
+    // 초기 버전: norm 후 콤마/구분자만으로 분리 (다중어가 한 덩어리로 뭉침)
+    return norm(keywords).split(/,|·|\//).filter(Boolean);
+  }
+  // 현재 버전: 공백 포함 분리 후 각 단어 norm
+  return keywords.split(/[\s,·/]+/).map(norm).filter(Boolean);
+}
 
-  let scored = PRODUCTS.map((p) => {
-    let score = 0;
+/** 가격·카테고리 하드 필터를 적용한 후보 상품 목록 */
+export function getCandidates(params: SearchParams): Product[] {
+  const { minPrice, maxPrice, category } = params;
+  let items = PRODUCTS.filter((p) => {
+    if (typeof minPrice === "number" && minPrice > 0 && p.price < minPrice) return false;
+    if (typeof maxPrice === "number" && maxPrice > 0 && p.price > maxPrice) return false;
+    return true;
+  });
+  // 카테고리가 지정되면 항상 그 카테고리로 한정. 카탈로그에 없는 카테고리면 빈 목록
+  // → "노트북"인데 예산 부족 시 텐트로 폴백되거나, "자동차" 같은 미취급 품목이 섞이는 것을 방지.
+  if (category) {
+    const cat = norm(category);
+    const matchCat = (p: Product) =>
+      norm(p.category).includes(cat) || cat.includes(norm(p.category));
+    items = items.filter(matchCat);
+  }
+  return items;
+}
 
-    // 카테고리 매칭 (가장 강한 신호)
-    if (category && norm(p.category).includes(norm(category))) score += 6;
+/** 한 상품의 어휘 점수 (카테고리·용도·키워드·평점) */
+export function lexicalScore(
+  p: Product,
+  params: SearchParams,
+  tokens: string[],
+  mode: LexicalMode = "enhanced"
+): number {
+  let score = 0;
+  const { category, useCase } = params;
 
-    // 용도 매칭
-    if (useCase) {
-      const uc = norm(useCase);
-      if (p.useCases.some((u) => norm(u).includes(uc) || uc.includes(norm(u)))) score += 5;
-    }
+  if (category && norm(p.category).includes(norm(category))) score += 6;
 
-    // 키워드 매칭: 큐레이션된 태그에 맞으면 더 높은 가중치(+4), 그 외 텍스트(이름/요약/용도 등)는 +3.
-    // 토큰별 동의어 확장, 그룹 단위 1회 가점(과대 점수 방지).
+  if (useCase) {
+    const uc = norm(useCase);
+    if (p.useCases.some((u) => norm(u).includes(uc) || uc.includes(norm(u)))) score += 5;
+  }
+
+  if (mode === "baseline") {
+    // 초기 버전: 단일 haystack에 토큰이 그대로 들어있으면 +3 (동의어/태그가중 없음)
+    const hay = norm([p.name, p.brand, p.category, p.summary, ...p.tags, ...p.useCases].join(" "));
+    for (const t of tokens) if (t && hay.includes(t)) score += 3;
+  } else {
+    // 현재 버전: 태그 매칭 +4 / 그 외 텍스트 +3, 동의어 확장
     const tagHay = norm(p.tags.join(" "));
     const textHay = norm([p.name, p.brand, p.category, p.summary, ...p.useCases].join(" "));
     for (const t of tokens) {
@@ -647,42 +676,20 @@ export function searchProducts(params: SearchParams): SearchResult {
       if (variants.some((v) => v && tagHay.includes(v))) score += 4;
       else if (variants.some((v) => v && textHay.includes(v))) score += 3;
     }
-
-    // 평점 가중 (동점 정렬용 소량 반영)
-    score += p.rating * 0.4;
-
-    return { p, score };
-  });
-
-  // 가격 필터 (하드 필터). 0 이하 값은 "제한 없음"으로 간주
-  // (모델이 예산 미지정 시 maxPrice=0을 넣는 경우가 있어 방어).
-  scored = scored.filter(({ p }) => {
-    if (typeof minPrice === "number" && minPrice > 0 && p.price < minPrice) return false;
-    if (typeof maxPrice === "number" && maxPrice > 0 && p.price > maxPrice) return false;
-    return true;
-  });
-
-  // 카테고리가 지정되고 그 카테고리가 카탈로그에 실제로 존재하면, 항상 그 카테고리로 한정한다.
-  // → "노트북"을 찾는데 예산이 부족하면 텐트/운동화로 폴백되는 것을 방지(빈 결과를 반환해
-  //   "예산 내 해당 상품 없음"을 상위에서 자연스럽게 안내하도록 함).
-  if (category) {
-    const cat = norm(category);
-    const matchCat = (p: Product) =>
-      norm(p.category).includes(cat) || cat.includes(norm(p.category));
-    if (PRODUCTS.some(matchCat)) {
-      scored = scored.filter(({ p }) => matchCat(p));
-    }
   }
 
-  // 검색어/카테고리/용도가 하나라도 있으면 점수 0짜리는 제외
-  const hasQuery = Boolean(category || useCase || tokens.length);
-  if (hasQuery) {
-    const meaningful = scored.filter(({ score }) => score > 2);
-    // 매칭이 너무 적으면(0건) 가격 필터만 통과한 것 중 평점순으로 백업 제공
-    if (meaningful.length > 0) scored = meaningful;
-  }
+  score += p.rating * 0.4; // 동점 정렬용 소량 반영
+  return score;
+}
 
-  // 정렬
+function clampLimit(limit?: number): number {
+  return Math.max(1, Math.min(limit ?? 6, 12));
+}
+
+function sortByMode(
+  scored: { p: Product; score: number }[],
+  sortBy: SearchParams["sortBy"]
+): void {
   scored.sort((a, b) => {
     switch (sortBy) {
       case "price_asc":
@@ -695,8 +702,31 @@ export function searchProducts(params: SearchParams): SearchResult {
         return b.score - a.score || b.p.rating - a.p.rating;
     }
   });
+}
 
-  const products = scored.slice(0, Math.max(1, Math.min(limit, 12))).map(({ p }) => p);
+/**
+ * 어휘 기반 상품 검색 (RAG 미사용 / 폴백 경로).
+ * opts.lexicalMode 로 초기 버전(baseline)과 현재 버전(enhanced)을 비교할 수 있다(평가용).
+ */
+export function searchProducts(
+  params: SearchParams,
+  opts: { lexicalMode?: LexicalMode } = {}
+): SearchResult {
+  const mode = opts.lexicalMode ?? "enhanced";
+  const tokens = tokenize(params.keywords, mode);
+  const candidates = getCandidates(params);
+
+  let scored = candidates.map((p) => ({ p, score: lexicalScore(p, params, tokens, mode) }));
+
+  // 검색어/카테고리/용도가 있으면 점수 낮은(무관) 항목 제외
+  const hasQuery = Boolean(params.category || params.useCase || tokens.length);
+  if (hasQuery) {
+    const meaningful = scored.filter(({ score }) => score > 2);
+    if (meaningful.length > 0) scored = meaningful;
+  }
+
+  sortByMode(scored, params.sortBy);
+  const products = scored.slice(0, clampLimit(params.limit)).map(({ p }) => p);
   return { count: products.length, products };
 }
 

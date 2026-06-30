@@ -8,11 +8,11 @@ import {
 } from "ai";
 import { z } from "zod";
 import {
-  searchProducts,
   compareProducts,
   getProduct,
   listCategories,
 } from "@/lib/products";
+import { searchProductsSemantic } from "@/lib/semantic-search";
 
 // 스트리밍 응답을 위해 Edge 대신 Node 런타임 사용, 최대 실행 시간 여유 확보
 export const runtime = "nodejs";
@@ -34,6 +34,7 @@ ${listCategories().join(", ")}
    - 예) "원룸 자취생인데 로봇청소기 들이고 싶어" → search_products(category="로봇청소기", useCase="원룸") 호출.
    - 예) "캠핑 처음인데 10만 원으로 2인 텐트" → search_products(category="캠핑텐트", maxPrice=100000, useCase="캠핑") 호출.
    - 예산이 없으면 maxPrice를 비우고 호출하면 됩니다. 부족한 조건은 합리적으로 가정하세요.
+   - search_products의 query에는 사용자의 문장을 거의 그대로 넣어 의미 기반 검색(RAG)이 잘 되게 하세요. category·maxPrice·useCase는 필터로 함께 채웁니다.
    - 되묻기는 카테고리조차 전혀 가늠할 수 없을 때(예: "뭐 살 거 없나?")만, 딱 1가지를 짧게 물으세요.
 2. 추천은 반드시 search_products로 찾은 실제 카탈로그 상품만 사용하세요. 카탈로그에 없는 상품을 지어내지 마세요.
 3. 비교는 텍스트로만 하지 말고 도구로 하세요. 사용자가 "비교"를 요청했거나, 최종 추천 후보가 2개 이상이라면 **반드시 compare_products 도구를 호출**해 비교표를 띄운 뒤 추천하세요. (compare_products의 productIds에는 search_products 결과의 id를 넣습니다.)
@@ -72,12 +73,18 @@ export async function POST(req: Request) {
     tools: {
       search_products: tool({
         description:
-          "사용자의 상황/예산/용도에 맞는 상품 후보를 카탈로그에서 검색한다. 추천 전에 반드시 먼저 호출한다.",
+          "사용자의 상황/예산/용도에 맞는 상품 후보를 카탈로그에서 의미 기반(RAG)으로 검색한다. 추천 전에 반드시 먼저 호출한다.",
         inputSchema: z.object({
+          query: z
+            .string()
+            .optional()
+            .describe(
+              "사용자의 자연어 의도를 그대로 담은 문장. 의미 검색(RAG)에 사용되니 되도록 채운다. 예: '지하철 출퇴근에 쓸 조용한 노이즈캔슬링 이어폰'"
+            ),
           keywords: z
             .string()
             .optional()
-            .describe("자유 키워드. 상품명/태그/용도/요약에서 매칭 (예: '가벼운 노트북', '노이즈캔슬링')"),
+            .describe("핵심 키워드(필터·랭킹 보조). 예: '노이즈캔슬링 가벼운'"),
           category: z
             .string()
             .optional()
@@ -95,7 +102,7 @@ export async function POST(req: Request) {
           limit: z.number().optional().describe("최대 결과 개수 (기본 6)"),
         }),
         execute: async (params) => {
-          const { count, products } = searchProducts(params);
+          const { count, products } = await searchProductsSemantic(params);
           // 토큰 절약을 위해 LLM에는 핵심 필드만 전달 (UI는 별도 output 전체를 사용)
           return {
             count,

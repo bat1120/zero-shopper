@@ -30,6 +30,8 @@ export interface Product {
 
 /** search_products 도구의 입력 파라미터 */
 export interface SearchParams {
+  /** 사용자의 자연어 의도 전체 (의미 검색=RAG 임베딩에 사용). 예: "지하철 출퇴근에 쓸 조용한 이어폰" */
+  query?: string;
   /** 자유 키워드 (상품명/태그/용도/요약에서 매칭) */
   keywords?: string;
   /** 카테고리 부분 일치 */

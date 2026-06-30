@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "embeddings": "tsx scripts/build-embeddings.ts",
+    "eval": "tsx scripts/eval-search.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.3",
@@ -23,6 +25,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

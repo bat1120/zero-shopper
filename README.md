@@ -33,7 +33,7 @@
 ## 2. 주요 기능
 
 - 💬 **자연어 상황 입력 → 의도 파싱**: 예산·용도·제약을 LLM이 해석
-- 🔎 **상품 검색 (Tool)**: 카탈로그에서 조건에 맞는 후보를 점수화·필터링
+- 🔎 **의미 기반 상품 검색 (RAG + Tool)**: 임베딩 의미 유사도와 어휘 점수를 결합한 하이브리드 검색 (정량 평가는 [검색 평가 문서](docs/search-eval.md) 참고)
 - ⚖️ **상품 비교 (Tool)**: 후보 2개 이상이면 핵심 스펙·장단점을 표로 비교
 - 🧠 **근거 기반 추천**: 단순 나열이 아니라 "이 상황엔 A, 다만 B는 이런 트레이드오프" 식의 판단 제시
 - ⚡ **실시간 스트리밍 UI**: SSE 기반으로 답변이 타이핑되듯 출력
@@ -50,6 +50,7 @@
 | 스타일 | **Tailwind CSS v4** (헤드리스 UI 스타일의 자체 컴포넌트) |
 | AI / 에이전트 | **Vercel AI SDK v5 (`ai`, `@ai-sdk/openai`, `@ai-sdk/react`)** |
 | LLM | **OpenAI (기본 `gpt-4.1-mini`)** · Function/Tool Calling |
+| 검색(RAG) | **OpenAI `text-embedding-3-small` 임베딩 + 코사인 유사도** · 의미+어휘 하이브리드 |
 | 검증 | **Zod** (도구 입력 스키마) |
 | 스트리밍 | **SSE** (`toUIMessageStreamResponse` / `useChat`) |
 | 배포 | **Vercel** |
@@ -120,7 +121,7 @@ npm run build && npm run start
 
 | 도구 | 입력 | 역할 |
 | --- | --- | --- |
-| `search_products` | `keywords, category, minPrice, maxPrice, useCase, sortBy, limit` | 상황/예산/용도로 후보 검색·점수화 |
+| `search_products` | `query, keywords, category, minPrice, maxPrice, useCase, sortBy, limit` | 의미(RAG)+어휘 하이브리드로 후보 검색. `query`(자연어 의도)는 임베딩 검색에 사용 |
 | `compare_products` | `productIds[]` (≥2) | 핵심 스펙·장단점 비교 |
 | `get_product_detail` | `productId` | 단일 상품 상세 |
 
@@ -128,8 +129,9 @@ npm run build && npm run start
 
 ## 6. 데이터 흐름
 
-- **카탈로그**: `lib/products.ts` 의 정적 더미 데이터(노트북·이어폰·텐트·러닝화·로봇청소기·커피머신·모니터·키보드 등 8개 카테고리, 36개 상품). 실제 서비스라면 DB·커머스 API로 대체됩니다.
-- **검색 로직**: `searchProducts()` 가 카테고리(강한 신호)·용도·키워드·평점을 가중 점수화하고 가격을 하드 필터링한 뒤 정렬해 상위 N개를 반환.
+- **카탈로그**: `lib/products.ts` 의 정적 더미 데이터(노트북·무선이어폰·헤드폰·캠핑텐트·러닝화·로봇청소기·커피머신·모니터·키보드 9개 카테고리, **34개 상품**). 실제 서비스라면 DB·커머스 API로 대체됩니다.
+- **RAG 색인**: 상품 임베딩은 빌드 타임에 미리 생성해 `lib/product-embeddings.json`에 저장(`scripts/build-embeddings.ts`). 런타임에는 **쿼리만 임베딩**해 코사인 유사도를 계산.
+- **하이브리드 검색**: `searchProductsSemantic()` 가 카테고리·가격으로 하드 필터링한 뒤, **의미 유사도(45%) + 어휘 점수(55%)**를 합산해 정렬. 임베딩/키 미가용 시 어휘 검색 `searchProducts()` 로 폴백.
 - **토큰 최적화**: 도구가 LLM에 돌려주는 결과는 핵심 필드로 슬림화. UI는 동일 `output`을 받아 카드/표를 그립니다.
 - **상태**: 대화 상태는 `useChat`이 클라이언트에서 관리(서버는 무상태). 각 메시지는 `parts`(텍스트/도구 호출/도구 결과)로 구성되어 파트 단위로 렌더링.
 
@@ -139,8 +141,9 @@ npm run build && npm run start
 
 - **에이전트의 "판단 흐름" 설계**: 시스템 프롬프트 + 3종 도구 + 멀티스텝 루프로 *의도 파싱 → 도구 행동 → 근거 추천* 파이프라인 구성.
 - **도구 결과의 서비스화**: 도구 `output`을 그대로 흘리지 않고 `message.parts`를 파싱해 **상품 카드 / 비교표 / 진행 상태 칩**으로 렌더링 → "실제 쇼핑 경험"에 가깝게.
-- **검색 랭킹 로직**: 카테고리·용도·키워드·가격을 조합한 가중 점수 + 백업 폴백(매칭이 0이면 가격 필터 통과분 평점순) 설계.
-- **UX 디테일**: 빈 화면 추천 프롬프트, 스트리밍 표시, 중지 버튼, 자동 스크롤, 키 미설정 시 graceful 에러, 모바일 대응 레이아웃.
+- **RAG 하이브리드 검색**: 임베딩 의미 유사도 + 어휘(동의어·태그가중) 점수를 결합하고, 가중치를 평가 셋으로 튜닝(45:55).
+- **정량 평가 하네스**: 라벨 25개 쿼리로 Top-1/Recall@3/MRR을 측정해 개선을 수치로 검증 → [docs/search-eval.md](docs/search-eval.md). (초기 어휘 Top-1 68% → 개선 어휘·RAG 100%)
+- **UX 디테일**: 빈 화면 추천 프롬프트, 카드 클릭 상세, 후속 질문 칩, 스트리밍·중지·자동 스크롤, 키 미설정 시 graceful 에러, 모바일 대응.
 
 ---
 
@@ -148,17 +151,17 @@ npm run build && npm run start
 
 - **실데이터 미연동**: 실제 쇼핑몰 API/크롤링 대신 정적 더미 카탈로그 사용.
 - **대화 영속성 없음**: 새로고침하면 대화가 초기화됨(DB/세션 미연동).
-- **RAG 미적용**: 카탈로그가 작아 키워드/필터 검색으로 충분. 리뷰 본문 임베딩 검색은 미구현.
+- **RAG 범위**: 상품 단위 임베딩 RAG는 적용했으나, **리뷰 본문까지 색인하는 문서 단위 RAG와 벡터 DB(pgvector 등) 연동은 미구현**(현재는 정적 JSON 벡터).
 - **인증·장바구니·결제 없음**: 추천까지만 다루는 프로토타입 범위.
-- **평가/테스트 하네스**: 응답 품질 자동 평가(프롬프트 회귀 테스트 등)는 미구현.
+- **평가 셋 규모**: 평가 하네스는 구축했으나 라벨이 25개로 작고 단일 작성자 기준.
 
 ---
 
 ## 9. 향후 개선 방향
 
-- 실 커머스 데이터 연동(상품 API) + **리뷰 임베딩 기반 RAG**로 "리뷰 요약·장단점 분석" 강화.
+- 실 커머스 데이터 연동(상품 API) + **리뷰 본문까지 색인하는 문서 단위 RAG**(벡터 DB·pgvector)로 "리뷰 요약·장단점 분석" 강화.
 - 대화/추천 이력 저장(Supabase/Postgres)과 개인화(과거 선호 반영).
-- **에이전트 평가 하네스**: 시나리오별 골든셋으로 도구 선택·추천 품질 회귀 테스트(공고의 "LLM 응답 품질 검증" 항목과 연결).
+- **평가 셋 확대**: 현재 25개 라벨을 다수 평가자 합의 라벨로 키우고, 가중치·임베딩 차원 재튜닝(공고의 "LLM 응답 품질 검증" 항목과 연결).
 - 상품 카드에서 바로 비교 담기 → 비교 트레이 → 장바구니로 이어지는 액션 루프.
 - 임베더블 위젯 형태로 외부 쇼핑몰에 삽입(공고의 "임베더블 AI 위젯" 방향).
 
@@ -177,16 +180,24 @@ npm run build && npm run start
 
 ```
 app/
-  layout.tsx            # 메타데이터·폰트·레이아웃
-  page.tsx              # 채팅 UI (useChat, 스트리밍, 파트 렌더링)
-  api/chat/route.ts     # 에이전트 라우트 (streamText + 3종 Tool + SSE)
-  globals.css           # 다크 테마 · 디자인 토큰
+  layout.tsx                # 메타데이터·폰트·레이아웃
+  page.tsx                  # 채팅 UI (useChat, 스트리밍, 파트 렌더링)
+  api/chat/route.ts         # 에이전트 라우트 (streamText + 3종 Tool + SSE)
+  globals.css               # 다크 테마 · 디자인 토큰
 components/
-  product-card.tsx      # 상품 카드 / 그리드
-  compare-table.tsx     # 비교표
-  markdown-lite.tsx     # 의존성 없는 경량 마크다운 렌더러
+  product-card.tsx          # 상품 카드 / 그리드 (클릭 → 상세)
+  compare-table.tsx         # 비교표
+  markdown-lite.tsx         # 의존성 없는 경량 마크다운 렌더러
 lib/
-  products.ts           # 더미 카탈로그 + 검색/비교 로직
-  types.ts              # 도메인 타입
-  format.ts             # 가격/평점 포맷 + 표시용 타입
+  products.ts               # 더미 카탈로그 + 어휘 검색/필터/비교 로직
+  semantic-search.ts        # RAG 하이브리드 검색 (임베딩 + 어휘)
+  embed-text.ts             # 상품/쿼리 임베딩 텍스트 빌더
+  product-embeddings.json   # 사전 생성된 상품 임베딩 벡터
+  types.ts · format.ts      # 도메인 타입 · 표시 포맷
+scripts/
+  build-embeddings.ts       # 상품 임베딩 생성 (빌드 타임)
+  eval-search.ts            # 검색 랭킹 평가 하네스 (Top-1/Recall@3/MRR)
+docs/
+  search-eval.md            # 검색 품질 정량 평가 결과
+  demo-script.md            # 시연 영상 대본
 ```
