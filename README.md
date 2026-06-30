@@ -66,6 +66,7 @@
 - 🃏 **결과의 서비스화**: 도구 결과를 텍스트로 흘리지 않고 **상품 카드 · 비교표**로 렌더링
 - ❓ **부족한 정보는 역질문**: 추천에 결정적인 정보(예산·용도)가 없으면 한 가지만 되물음
 - 💾 **대화 이력 저장 (Supabase)**: 매 턴 대화를 저장하고, 사이드바에서 과거 대화를 열람·이어가기·삭제 (익명 세션 기반, 미설정 시 자동 비활성화)
+- 🧬 **개인화 메모리 (점진 학습)**: 대화가 끝날 때마다 사용자의 **지속적 선호**(예산 성향·관심 카테고리·생활 맥락)를 LLM이 누적 추출 → 다음 질문 때 프롬프트에 주입해 점점 맞춤화된 추천. *모델 파인튜닝이 아니라 "에이전트 메모리"* 방식. 사이드바에서 메모리 확인·초기화 가능
 
 ---
 
@@ -79,6 +80,7 @@
 | LLM | **OpenAI (기본 `gpt-4.1-mini`)** · Function/Tool Calling |
 | 상품 데이터 | **네이버 쇼핑 검색 API** (실시간) · 미설정 시 더미 카탈로그로 폴백 |
 | 대화 이력 | **Supabase (Postgres)** · 익명 세션별 저장/조회 · 미설정 시 자동 비활성화 |
+| 개인화 | 대화 기반 **선호 프로필**(LLM 누적 추출 → 프롬프트 주입) · `next/server` `after()`로 응답 후 갱신 |
 | 검색(RAG) | **OpenAI `text-embedding-3-small` 임베딩 + 코사인 유사도** · 의미 재랭킹 / 의미+어휘 하이브리드 |
 | 검증 | **Zod** (도구 입력 스키마) |
 | 스트리밍 | **SSE** (`toUIMessageStreamResponse` / `useChat`) |
@@ -174,6 +176,7 @@ npm run build && npm run start
 - **토큰 최적화**: 도구가 LLM에 돌려주는 결과는 핵심 필드로 슬림화. UI는 동일 `output`을 받아 카드/표를 그립니다.
 - **상태**: 대화 상태는 `useChat`이 클라이언트에서 관리. 각 메시지는 `parts`(텍스트/도구 호출/도구 결과)로 구성되어 파트 단위로 렌더링.
 - **대화 이력(Supabase)**: 클라이언트가 익명 세션 ID(localStorage)와 대화 ID를 transport body에 실어 보내고, `/api/chat`의 `onFinish`에서 전체 `UIMessage[]`를 Supabase `conversations` 테이블에 upsert. 사이드바는 `/api/conversations`(목록)·`/api/conversations/[id]`(로드/삭제)를 호출. 쓰기·읽기는 모두 서버(service_role)로만 이뤄지고 RLS로 공개 접근을 차단(브라우저는 Supabase에 직접 접속하지 않음).
+- **개인화 메모리(점진 학습)**: `/api/chat`은 응답 생성 전 세션의 선호 프로필(`user_profiles`)을 로드해 시스템 프롬프트에 `[사용자 메모리]` 블록으로 주입하고, 응답 종료 후 `after()`로 *방금 대화에서 지속적 선호만 보수적으로* 추출해 프로필을 누적 갱신(LLM `generateObject`). **이번 질문의 명시적 조건이 항상 메모리보다 우선**하도록 가드. 서버리스에서 fire-and-forget은 함수가 얼어붙어 중단되므로 `next/server`의 `after()`로 응답 후 실행을 보장. 사이드바의 "맞춤 메모리" 카드에서 요약 확인·초기화(`/api/profile` GET·DELETE).
 
 ---
 
@@ -228,6 +231,7 @@ app/
   api/chat/route.ts         # 에이전트 라우트 (streamText + 3종 Tool + SSE + 이력 저장)
   api/conversations/route.ts        # 대화 목록 (GET)
   api/conversations/[id]/route.ts   # 대화 로드(GET)·삭제(DELETE)
+  api/profile/route.ts              # 개인화 메모리 요약(GET)·초기화(DELETE)
   globals.css               # 다크 테마 · 디자인 토큰
 components/
   product-card.tsx          # 상품 카드 / 그리드 (클릭 → 상세)
@@ -241,6 +245,7 @@ lib/
   products.ts               # 더미 카탈로그 + 어휘 검색/필터/비교 로직 (폴백)
   supabase.ts               # 서버 전용 Supabase 클라이언트 (service_role)
   conversations.ts          # 대화 저장/목록/로드/삭제 데이터 레이어
+  user-profile.ts           # 개인화 메모리: 선호 추출/주입/조회/삭제
   embed-text.ts             # 상품/쿼리 임베딩 텍스트 빌더
   product-embeddings.json   # 사전 생성된 더미 상품 임베딩 벡터
   types.ts · format.ts      # 도메인 타입 · 표시 포맷
