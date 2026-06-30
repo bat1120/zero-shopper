@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "embeddings": "tsx scripts/build-embeddings.ts",
-    "eval": "tsx scripts/eval-search.ts"
+    "eval": "tsx scripts/eval-search.ts",
+    "eval:live": "tsx scripts/eval-live.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.3",
