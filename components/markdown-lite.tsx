@@ -2,21 +2,46 @@ import React from "react";
 
 /**
  * 의존성 없는 초경량 마크다운 렌더러.
- * 에이전트 답변에서 흔히 쓰는 **굵게**, 줄바꿈, "- " / "• " 불릿 정도만 처리한다.
+ * 에이전트 답변에서 흔히 쓰는 **굵게**, [라벨](링크), 맨URL,
+ * 줄바꿈, "- " / "• " 불릿 정도만 처리한다.
  */
+const LinkChip = ({ href, label }: { href: string; label: string }) => (
+  <a
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="break-all font-medium text-brand-300 underline decoration-brand-300/40 underline-offset-2 hover:text-brand-200"
+  >
+    {label}
+  </a>
+);
+
+// **굵게** | [라벨](http…) | 맨 http… URL  (셋 중 하나 매칭)
+const INLINE_RE =
+  /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>)]+)/g;
+
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  const regex = /\*\*(.+?)\*\*/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
-  while ((m = regex.exec(text)) !== null) {
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(text)) !== null) {
     if (m.index > last) nodes.push(text.slice(last, m.index));
-    nodes.push(
-      <strong key={`${keyPrefix}-b${i++}`} className="font-semibold text-white">
-        {m[1]}
-      </strong>
-    );
+    if (m[1] !== undefined) {
+      // **굵게**
+      nodes.push(
+        <strong key={`${keyPrefix}-b${i++}`} className="font-semibold text-white">
+          {m[1]}
+        </strong>
+      );
+    } else if (m[3] !== undefined) {
+      // [라벨](URL) — 라벨을 클릭 가능한 링크로, 긴 URL은 숨김
+      nodes.push(<LinkChip key={`${keyPrefix}-l${i++}`} href={m[3]} label={m[2]} />);
+    } else if (m[4] !== undefined) {
+      // 맨 URL — 통째로 노출하면 말풍선을 넘치므로 "바로가기 ↗" 칩으로 축약
+      nodes.push(<LinkChip key={`${keyPrefix}-u${i++}`} href={m[4]} label="바로가기 ↗" />);
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
@@ -60,5 +85,7 @@ export function MarkdownLite({ text }: { text: string }) {
   });
   flushBullets("ul-last");
 
-  return <div className="space-y-1 text-sm text-white/85">{blocks}</div>;
+  return (
+    <div className="space-y-1 break-words text-sm text-white/85">{blocks}</div>
+  );
 }
