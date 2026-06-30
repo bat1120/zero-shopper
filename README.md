@@ -205,6 +205,7 @@ npm run build && npm run start
 - **정량 평가 하네스 2종** → [docs/search-eval.md](docs/search-eval.md):
   - **더미 경로**: 라벨 25개 쿼리로 Top-1/Recall@3/MRR (초기 어휘 68% → 개선 어휘·RAG **Top-1 100%**).
   - **라이브 경로**: 고정 라벨이 없어 **LLM-as-judge(RAGAS류)**로 후보 적합도를 채점해 nDCG@5/Precision@3/MRR 측정. 재랭킹이 네이버 원순서보다 우위(MRR 0.820 → **0.861**)임을 검증.
+- **E2E 회귀 하네스**(`npm run test:e2e[:llm]`): 입력 검증(잘못된 본문 → 400), 라우트 소유·존재(없는 대화 → 404), LLM 행동(역할 게이트·검색·결정 도우미), 크로스턴 상품 복원까지 18개 케이스를 자동 검증하고 실패 시 exit 1로 게이트. 다회 감사(서버/클라이언트/검색/아키텍처) → 수정 → 하네스 재실행 루프로 품질을 끌어올렸습니다.
 - **UX 디테일**: 빈 화면 추천 프롬프트, 카드 클릭 상세, 후속 질문 칩, 스트리밍·중지·자동 스크롤, 키 미설정 시 graceful 에러, 모바일 대응.
 
 ---
@@ -215,6 +216,7 @@ npm run build && npm run start
 - **정량 평가 범위**: 더미 경로는 고정 라벨 기반 Top-1/Recall@3/MRR로, 라이브 경로는 **LLM-as-judge** 기반 nDCG/Precision/MRR로 측정. 다만 라이브 평가는 심판이 단일 LLM이고 네이버 데이터가 시점에 따라 변해 절대 수치 재현성은 제한적(상대 비교 위주).
 - **라이브 캐시 휘발성**: 라이브 상품은 인메모리 캐시(요청/프로세스 수명)라 영속 저장소·벡터 DB(pgvector 등) 연동은 미구현.
 - **대화 이력은 익명 세션 기준**: 로그인이 없어 localStorage 세션 ID로 구분 → 브라우저/기기를 바꾸면 이력이 따라가지 않음(향후 인증 연동 시 사용자 단위로 확장 가능).
+- **세션 ID = 접근 토큰(인증 부재, 의도적 단순화)**: 대화/메모리 접근 제어는 클라이언트가 보내는 `x-session-id`(localStorage UUID)에만 의존합니다. 서버는 이 값의 진위를 검증하지 않으므로, **타인의 세션 UUID를 알면 그 세션의 이력·메모리를 읽거나 삭제할 수 있습니다.** UUID가 추측 불가능한 점에만 기대는 구조라, 실서비스라면 서명된 토큰이나 실제 인증으로 대체해야 합니다(프로토타입 범위에서는 의도적으로 단순화). 서버 쓰기 키(`SUPABASE_SERVICE_ROLE_KEY`)는 서버 전용이며 RLS로 브라우저 직접 접근은 차단됩니다.
 - **인증·장바구니·결제 없음**: 추천까지만 다루는 프로토타입 범위.
 
 ---
@@ -270,6 +272,7 @@ scripts/
   build-embeddings.ts       # 더미 상품 임베딩 생성 (빌드 타임)
   eval-search.ts            # 더미 경로 평가 하네스 (Top-1/Recall@3/MRR)
   eval-live.ts              # 라이브 경로 평가 하네스 (LLM-as-judge · nDCG/P@3/MRR)
+  test-harness.mjs          # E2E 회귀 하네스 (입력검증·라우트·LLM행동·크로스턴복원, exit code 게이트)
   shoot.mjs                 # README용 스크린샷 생성 (헤드리스 Chrome)
 docs/
   supabase-schema.sql       # 대화 이력 테이블 스키마 (Supabase SQL Editor에서 실행)
