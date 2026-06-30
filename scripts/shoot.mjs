@@ -74,6 +74,36 @@ try {
   await page.screenshot({ path: resolve(OUT, "02b-compare.png") });
   console.log("✓ 02b-compare.png");
 
+  // 02c) 결정 도우미 — 비교 후 트레이드오프 질문 카드 (LLM이 호출해야 떠서 최대 3회 재시도)
+  const DECISION_PROMPT =
+    "캠핑 입문용 텐트 두세 개 비교해줘. 휴대성이 중요할지 실내 공간이 중요할지 고민돼서 결정을 못 하겠어";
+  let decisionShown = false;
+  for (let attempt = 1; attempt <= 3 && !decisionShown; attempt++) {
+    await page.getByRole("button", { name: "새 대화" }).click();
+    await settle(page, 500);
+    const box = page.locator("textarea");
+    await box.click();
+    await box.fill(DECISION_PROMPT);
+    await page.keyboard.press("Enter");
+    try {
+      await page.getByText("결정 도우미", { exact: false }).waitFor({ timeout: 55000 });
+      decisionShown = true;
+    } catch {
+      console.warn(`  · 결정 도우미 미발생(시도 ${attempt}/3) — 재시도`);
+    }
+  }
+  if (decisionShown) {
+    // 스트림(설명 텍스트)까지 끝나도록 잠깐 대기 후 카드가 보이게 스크롤
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await settle(page, 1200);
+    await page.getByText("결정 도우미", { exact: false }).scrollIntoViewIfNeeded();
+    await settle(page, 600);
+    await page.screenshot({ path: resolve(OUT, "02c-decision.png") });
+    console.log("✓ 02c-decision.png");
+  } else {
+    console.warn("⚠ 결정 도우미를 트리거하지 못함 — 02c-decision.png 생략");
+  }
+
   await ctx.close();
 
   // ---------- 모바일 ----------
