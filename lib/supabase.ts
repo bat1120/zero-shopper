@@ -11,11 +11,23 @@ export function hasSupabase(): boolean {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
+/**
+ * Project URL 정규화. 사용자가 REST 엔드포인트(.../rest/v1/)나 끝 슬래시를 붙여 넣어도
+ * 베이스 origin(https://xxxx.supabase.co)만 추출해 supabase-js에 넘긴다.
+ */
+function normalizeUrl(raw: string): string {
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+  }
+}
+
 export function getSupabase(): SupabaseClient | null {
   if (!hasSupabase()) return null;
   if (cached) return cached;
   cached = createClient(
-    process.env.SUPABASE_URL as string,
+    normalizeUrl(process.env.SUPABASE_URL as string),
     process.env.SUPABASE_SERVICE_ROLE_KEY as string,
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
