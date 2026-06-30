@@ -545,7 +545,7 @@ export const PRODUCTS: Product[] = [
     rating: 4.3,
     reviewCount: 2670,
     emoji: "⌨️",
-    tags: ["저소음", "사무용", "무선"],
+    tags: ["저소음", "기계식", "사무용", "무선"],
     useCases: ["사무", "재택근무", "공용공간"],
     specs: { 배열: "풀배열", 스위치: "저소음 적축", 연결: "무선+유선", 키캡: "ABS" },
     pros: ["조용해서 사무실·카페 OK", "무선 지원"],
@@ -637,15 +637,15 @@ export function searchProducts(params: SearchParams): SearchResult {
       if (p.useCases.some((u) => norm(u).includes(uc) || uc.includes(norm(u)))) score += 5;
     }
 
-    // 키워드 매칭 (이름/태그/용도/요약/카테고리)
-    const haystack = norm(
-      [p.name, p.brand, p.category, p.summary, ...p.tags, ...p.useCases].join(" ")
-    );
-    // 사용자 토큰별로 동의어까지 확장해 매칭 (그룹 단위로 한 번만 가점 → 과대 점수 방지)
+    // 키워드 매칭: 큐레이션된 태그에 맞으면 더 높은 가중치(+4), 그 외 텍스트(이름/요약/용도 등)는 +3.
+    // 토큰별 동의어 확장, 그룹 단위 1회 가점(과대 점수 방지).
+    const tagHay = norm(p.tags.join(" "));
+    const textHay = norm([p.name, p.brand, p.category, p.summary, ...p.useCases].join(" "));
     for (const t of tokens) {
       if (!t) continue;
       const variants = expandToken(t);
-      if (variants.some((v) => v && haystack.includes(v))) score += 3;
+      if (variants.some((v) => v && tagHay.includes(v))) score += 4;
+      else if (variants.some((v) => v && textHay.includes(v))) score += 3;
     }
 
     // 평점 가중 (동점 정렬용 소량 반영)
