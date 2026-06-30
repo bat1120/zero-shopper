@@ -29,6 +29,22 @@ export interface ProductCardData {
   summary: string;
 }
 
+/** 결정 도우미 도구 output의 표시용 타입 */
+export interface DecisionOption {
+  /** 사용자의 우선순위 라벨 (예: "가볍고 휴대성이 중요") */
+  label: string;
+  productId: string;
+  /** 이 우선순위에 맞는 상품명 (서버에서 ID로 resolve) */
+  productName: string;
+  /** 이 상품이 그 우선순위에 맞는 한 줄 근거 */
+  reason: string;
+}
+export interface DecisionGuideData {
+  /** 결정을 가르는 핵심 질문 */
+  question: string;
+  options: DecisionOption[];
+}
+
 /** 비교 도구 output의 표시용 타입 */
 export interface CompareItem {
   id: string;

@@ -6,9 +6,10 @@ import { DefaultChatTransport } from "ai";
 import { Send, Square, Search, Scale, Sparkles, Menu } from "lucide-react";
 import { ProductCardGrid, ProductCard } from "@/components/product-card";
 import { CompareTable } from "@/components/compare-table";
+import { DecisionGuide } from "@/components/decision-guide";
 import { MarkdownLite } from "@/components/markdown-lite";
 import { Sidebar } from "@/components/sidebar";
-import type { ProductCardData, CompareItem } from "@/lib/format";
+import type { ProductCardData, CompareItem, DecisionGuideData } from "@/lib/format";
 import type { ConversationSummary } from "@/lib/conversations";
 
 const SUGGESTIONS = [
@@ -450,6 +451,15 @@ function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void })
       return null; // 상품을 못 찾음(found=false) → 조용히 무시
     }
     return <ToolRunningChip label="상세 정보를 불러오는 중…" />;
+  }
+
+  // 5) 결정 도우미 도구
+  if (part.type === "tool-decision_guide") {
+    if (part.state === "output-error") return null;
+    if (part.state === "output-available") {
+      return <DecisionGuide data={part.output as DecisionGuideData} onPick={onAsk} />;
+    }
+    return <ToolRunningChip label="결정을 돕는 중…" />;
   }
 
   return null;

@@ -64,6 +64,7 @@ ${sourceLine}
    - 상품 카드와 비교표는 화면에 따로 렌더링되므로, 텍스트에서 장황하게 나열하지 말고 "판단의 근거"에 집중하세요.
    - 구매 링크는 상품 카드·비교표에 이미 있으니 본문에서는 보통 생략하세요. 꼭 본문에 링크를 넣어야 한다면 긴 URL을 그대로 붙여넣지 말고 반드시 마크다운 [상품명](링크) 형식으로 쓰세요.
 5. 답변 톤은 친근하고 신뢰감 있게. 과장 광고처럼 말하지 말고, 솔직한 조언자처럼 말하세요.
+6-1. **결정 도우미**: compare_products로 비교한 뒤에도 후보가 2~3개로 남고 어느 하나가 객관적으로 우월하지 않아 **사용자의 개인 우선순위(트레이드오프)** 에 따라 선택이 갈린다면, 한쪽을 강요하지 말고 **decision_guide를 1번 호출**해 결정 기준 질문과 선택지(각 우선순위 → 상품)를 제시하세요. 사용자가 우선순위를 답하면 그 선택지의 상품으로 최종 추천을 마무리합니다. (이미 한쪽이 명확히 낫거나 사용자가 기준을 밝혔으면 호출하지 말고 바로 추천하세요. 후보가 1개뿐이면 호출하지 마세요.)
 6. **역할 범위**: 당신은 쇼핑 추천 도우미입니다. 시·에세이·코드 작성, 번역, 일반 지식 문답, 잡담 등 쇼핑과 무관한 작업은 정중히 거절하고("저는 쇼핑 추천을 도와드리는 에이전트예요") 어떤 상품을 찾는지 물어 자연스럽게 본래 역할로 돌아오세요. 단, 상품 선택에 필요한 일반 상식(용도·환경 설명 등)은 답해도 됩니다.
 
 [한국어 금액 단위 — 매우 중요]
@@ -211,6 +212,42 @@ export async function POST(req: Request) {
           if (!p) return { found: false as const, productId };
           return { found: true as const, product: p };
         },
+      }),
+
+      decision_guide: tool({
+        description:
+          "비교 후 최종 선택이 객관적 우열이 아니라 '사용자의 개인 우선순위(트레이드오프)'에서 갈릴 때, 결정을 돕는 질문 1개와 각 우선순위에 매핑된 후보 상품을 제시한다. 후보가 2~3개로 좁혀졌고 어느 하나가 명확히 우월하지 않을 때만 호출한다.",
+        inputSchema: z.object({
+          question: z
+            .string()
+            .describe(
+              "결정을 가르는 핵심 기준을 묻는 짧은 질문. 예: '휴대성과 실내 공간 중 무엇이 더 중요하세요?'"
+            ),
+          options: z
+            .array(
+              z.object({
+                label: z
+                  .string()
+                  .describe("사용자의 우선순위 라벨. 예: '가볍고 설치 간편한 게 중요'"),
+                productId: z
+                  .string()
+                  .describe("이 우선순위에 가장 맞는 상품 ID (search_products 결과의 id)"),
+                reason: z.string().describe("이 상품이 그 우선순위에 맞는 한 줄 근거"),
+              })
+            )
+            .min(2)
+            .max(3)
+            .describe("2~3개의 결정 선택지 (서로 다른 우선순위)"),
+        }),
+        execute: async ({ question, options }) => ({
+          question,
+          options: options.map((o) => ({
+            label: o.label,
+            productId: o.productId,
+            productName: resolveProduct(o.productId)?.name ?? o.productId,
+            reason: o.reason,
+          })),
+        }),
       }),
     },
   });
