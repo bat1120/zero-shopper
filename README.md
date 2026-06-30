@@ -8,8 +8,33 @@
 | --- | --- |
 | **배포 URL** | **https://zero-shopper.vercel.app** |
 | **GitHub** | https://github.com/bat1120/zero-shopper |
-| **시연 영상** | _(선택, 3분 이내 URL)_ |
+| **미리보기** | 아래 [스크린샷](#미리보기) 참고 |
 | **테스트 계정** | 별도 로그인 없음 — 접속 즉시 사용 가능 |
+
+---
+
+## 미리보기
+
+**상황을 말하면 → 네이버 쇼핑 실시간 검색 → 상품 카드 → 비교표 → 근거 기반 추천**, 그리고 모든 대화는 좌측 사이드바에 저장됩니다.
+
+![검색 결과 · 상품 카드 · 대화 이력 사이드바](docs/screenshots/02-results.png)
+
+| 첫 화면 (상황 입력 유도) | 비교표 · 근거 기반 추천 |
+| :---: | :---: |
+| ![첫 화면](docs/screenshots/01-hero.png) | ![비교표와 추천](docs/screenshots/02b-compare.png) |
+
+<details>
+<summary>📱 모바일 화면 (반응형 · 대화 이력 오버레이)</summary>
+
+<p>
+  <img src="docs/screenshots/03-mobile.png" width="280" alt="모바일 첫 화면" />
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/04-mobile-sidebar.png" width="280" alt="모바일 대화 이력 사이드바" />
+</p>
+
+</details>
+
+> 스크린샷은 실제 배포본을 헤드리스 Chrome으로 캡처합니다 — 재생성: `npm i -D playwright-core && node scripts/shoot.mjs`
 
 ---
 
@@ -223,8 +248,10 @@ scripts/
   build-embeddings.ts       # 더미 상품 임베딩 생성 (빌드 타임)
   eval-search.ts            # 더미 경로 평가 하네스 (Top-1/Recall@3/MRR)
   eval-live.ts              # 라이브 경로 평가 하네스 (LLM-as-judge · nDCG/P@3/MRR)
+  shoot.mjs                 # README용 스크린샷 생성 (헤드리스 Chrome)
 docs/
   supabase-schema.sql       # 대화 이력 테이블 스키마 (Supabase SQL Editor에서 실행)
   search-eval.md            # 검색 품질 정량 평가 결과
   demo-script.md            # 시연 영상 대본
+  screenshots/              # README 미리보기 이미지
 ```
