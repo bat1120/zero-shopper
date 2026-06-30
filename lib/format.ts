@@ -15,9 +15,16 @@ export interface ProductCardData {
   brand: string;
   category: string;
   price: number;
-  rating: number;
+  /** 라이브 API 상품은 평점이 없을 수 있음 */
+  rating?: number;
   emoji?: string;
-  tags: string[];
+  /** 실제 상품 이미지 URL (네이버 등 라이브 API) */
+  imageUrl?: string;
+  /** 구매/상세 페이지 링크 (라이브 API) */
+  link?: string;
+  /** 판매처 */
+  mall?: string;
+  tags?: string[];
   useCases?: string[];
   summary: string;
 }
@@ -27,7 +34,11 @@ export interface CompareItem {
   id: string;
   name: string;
   price: number;
-  rating: number;
+  /** 라이브 API 상품은 평점이 없을 수 있음 */
+  rating?: number;
+  mall?: string;
+  link?: string;
+  category?: string;
   specs: Record<string, string>;
   pros: string[];
   cons: string[];

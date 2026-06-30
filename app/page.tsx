@@ -144,7 +144,7 @@ export default function Home() {
           )}
         </form>
         <p className="mt-2 text-center text-[10px] text-white/25">
-          더미 카탈로그 기반 데모입니다. 추천 상품·가격은 실제와 다를 수 있어요.
+          네이버 쇼핑 검색 + AI 추천 데모입니다. 가격·재고는 실시간과 다를 수 있어요.
         </p>
       </div>
     </div>
@@ -160,7 +160,7 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
       <h2 className="text-xl font-bold text-white">무엇을 사야 할지 고민이신가요?</h2>
       <p className="mt-2 max-w-md text-sm text-white/50">
         스펙을 몰라도 괜찮아요. <strong className="text-white/80">상황</strong>만 말해주면
-        제로쇼퍼가 의도를 파악해 카탈로그에서 찾아 비교하고 추천해 드려요.
+        제로쇼퍼가 의도를 파악해 네이버 쇼핑에서 찾아 비교하고 추천해 드려요.
       </p>
 
       <div className="mt-7 grid w-full max-w-xl gap-2 sm:grid-cols-2">
@@ -261,7 +261,7 @@ function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void })
         </div>
       );
     }
-    return <ToolRunningChip label="카탈로그에서 상품을 찾는 중…" />;
+    return <ToolRunningChip label="상품을 찾는 중…" />;
   }
 
   // 3) 비교 도구

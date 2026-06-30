@@ -678,7 +678,7 @@ export function lexicalScore(
     }
   }
 
-  score += p.rating * 0.4; // 동점 정렬용 소량 반영
+  score += (p.rating ?? 0) * 0.4; // 동점 정렬용 소량 반영
   return score;
 }
 
@@ -697,9 +697,9 @@ function sortByMode(
       case "price_desc":
         return b.p.price - a.p.price;
       case "rating":
-        return b.p.rating - a.p.rating;
+        return (b.p.rating ?? 0) - (a.p.rating ?? 0);
       default:
-        return b.score - a.score || b.p.rating - a.p.rating;
+        return b.score - a.score || (b.p.rating ?? 0) - (a.p.rating ?? 0);
     }
   });
 }

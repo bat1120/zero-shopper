@@ -8,12 +8,18 @@ export interface Product {
   category: string;
   /** 가격 (원, KRW) */
   price: number;
-  /** 평점 0.0 ~ 5.0 */
-  rating: number;
-  /** 리뷰 수 */
-  reviewCount: number;
-  /** 이미지 대용 이모지 (더미 카탈로그라 실제 이미지 대신 사용) */
-  emoji: string;
+  /** 평점 0.0 ~ 5.0 (라이브 API 상품은 없을 수 있음) */
+  rating?: number;
+  /** 리뷰 수 (라이브 API 상품은 없을 수 있음) */
+  reviewCount?: number;
+  /** 이미지 대용 이모지 (더미 카탈로그용) */
+  emoji?: string;
+  /** 실제 상품 이미지 URL (네이버 등 라이브 API) */
+  imageUrl?: string;
+  /** 상품 구매/상세 페이지 링크 (라이브 API) */
+  link?: string;
+  /** 쇼핑몰/판매처 (라이브 API) */
+  mall?: string;
   /** 특성 태그 (예: "가벼움", "입문용", "가성비") */
   tags: string[];
   /** 적합한 상황/용도 (예: "캠핑", "재택근무", "출퇴근") */

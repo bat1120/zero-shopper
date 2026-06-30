@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { formatPrice, formatRating, type ProductCardData } from "@/lib/format";
 
 export function ProductCard({
@@ -32,23 +32,39 @@ export function ProductCard({
         (clickable ? " cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-400/50" : "")
       }
     >
-      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600/30 to-brand-400/10 text-2xl">
-        {p.emoji ?? "🛍️"}
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-brand-600/30 to-brand-400/10 text-2xl">
+        {p.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={p.imageUrl}
+            alt={p.name}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          (p.emoji ?? "🛍️")
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">{p.name}</p>
-            <p className="text-xs text-white/40">
-              {p.brand} · {p.category}
+            <p className="truncate text-xs text-white/40">
+              {[p.brand, p.category].filter(Boolean).join(" · ")}
             </p>
           </div>
           <div className="shrink-0 text-right">
             <p className="text-sm font-bold text-brand-300">{formatPrice(p.price)}</p>
-            <p className="text-xs text-amber-300/90">{formatRating(p.rating)}</p>
+            {typeof p.rating === "number" ? (
+              <p className="text-xs text-amber-300/90">{formatRating(p.rating)}</p>
+            ) : p.mall ? (
+              <p className="truncate text-[11px] text-white/40">{p.mall}</p>
+            ) : null}
           </div>
         </div>
-        <p className="mt-1 line-clamp-2 text-xs text-white/60">{p.summary}</p>
+        {p.summary ? (
+          <p className="mt-1 line-clamp-2 text-xs text-white/60">{p.summary}</p>
+        ) : null}
         {p.tags?.length ? (
           <div className="mt-2 flex flex-wrap gap-1">
             {p.tags.slice(0, 4).map((t) => (
@@ -60,6 +76,17 @@ export function ProductCard({
               </span>
             ))}
           </div>
+        ) : null}
+        {p.link ? (
+          <a
+            href={p.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-brand-300 hover:text-brand-200"
+          >
+            구매 페이지 <ExternalLink className="h-3 w-3" />
+          </a>
         ) : null}
       </div>
       {clickable && (
