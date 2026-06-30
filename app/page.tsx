@@ -36,6 +36,7 @@ function ToolRunningChip({ label }: { label: string }) {
 export default function Home() {
   const sessionIdRef = useRef<string>("");
   const conversationIdRef = useRef<string>("");
+  const loadingConvRef = useRef(false); // 과거 대화 로딩 중에는 전송 차단(레이스 방지)
 
   // transport는 한 번만 생성 — body에 현재 대화/세션 ID를 ref로 주입
   const [transport] = useState(
@@ -73,7 +74,11 @@ export default function Home() {
         headers: { "x-session-id": sessionIdRef.current },
       });
       const data = await res.json();
-      setMemory(data.enabled && data.summary ? { summary: data.summary, turns: data.turns } : null);
+      setMemory(
+        data.enabled && data.summary
+          ? { summary: data.summary, turns: Number(data.turns) || 0 }
+          : null
+      );
     } catch {
       /* 무시 */
     }
@@ -124,7 +129,7 @@ export default function Home() {
 
   function submit(text: string) {
     const value = text.trim();
-    if (!value || busy) return;
+    if (!value || busy || loadingConvRef.current) return;
     sendMessage({ text: value });
     setInput("");
   }
@@ -138,10 +143,11 @@ export default function Home() {
   }
 
   async function loadConversation(id: string) {
-    if (busy || id === conversationIdRef.current) {
+    if (busy || loadingConvRef.current || id === conversationIdRef.current) {
       setSidebarOpen(false);
       return;
     }
+    loadingConvRef.current = true;
     try {
       const res = await fetch(`/api/conversations/${id}`, {
         headers: { "x-session-id": sessionIdRef.current },
@@ -154,6 +160,7 @@ export default function Home() {
     } catch {
       /* 무시 */
     } finally {
+      loadingConvRef.current = false;
       setSidebarOpen(false);
     }
   }
@@ -265,7 +272,8 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // IME 조합 중(한글 등)의 Enter는 글자 확정용이므로 전송하지 않는다
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit(input);
               }
@@ -383,7 +391,7 @@ function MessageBubble({
     <div className="flex justify-start animate-fade-up">
       <div className="w-full max-w-[92%] space-y-2">
         {message.parts.map((part, i) => (
-          <PartView key={i} part={part} onAsk={onAsk} />
+          <PartView key={`${part.type}-${i}`} part={part} onAsk={onAsk} />
         ))}
       </div>
     </div>
@@ -404,6 +412,7 @@ function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void })
 
   // 2) 상품 검색 도구
   if (part.type === "tool-search_products") {
+    if (part.state === "output-error") return <ToolErrorChip label="상품 검색에 실패했어요" />;
     if (part.state === "output-available") {
       const products = (part.output?.products ?? []) as ProductCardData[];
       return (
@@ -418,6 +427,7 @@ function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void })
 
   // 3) 비교 도구
   if (part.type === "tool-compare_products") {
+    if (part.state === "output-error") return <ToolErrorChip label="상품 비교에 실패했어요" />;
     if (part.state === "output-available") {
       const items = (part.output?.products ?? []) as CompareItem[];
       return (
@@ -432,15 +442,25 @@ function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void })
 
   // 4) 단일 상세 도구
   if (part.type === "tool-get_product_detail") {
-    if (part.state === "output-available" && part.output?.found) {
-      return <ProductCard p={part.output.product as ProductCardData} onAsk={onAsk} />;
+    if (part.state === "output-error") return <ToolErrorChip label="상세 정보를 불러오지 못했어요" />;
+    if (part.state === "output-available") {
+      if (part.output?.found) {
+        return <ProductCard p={part.output.product as ProductCardData} onAsk={onAsk} />;
+      }
+      return null; // 상품을 못 찾음(found=false) → 조용히 무시
     }
-    if (part.state !== "output-available") {
-      return <ToolRunningChip label="상세 정보를 불러오는 중…" />;
-    }
+    return <ToolRunningChip label="상세 정보를 불러오는 중…" />;
   }
 
   return null;
+}
+
+function ToolErrorChip({ label }: { label: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-200">
+      {label}
+    </div>
+  );
 }
 
 function ToolLabel({ icon, text }: { icon: React.ReactNode; text: string }) {

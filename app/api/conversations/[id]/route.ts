@@ -18,6 +18,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id } = await params;
   const sessionId = req.headers.get("x-session-id") ?? "";
   const ok = await deleteConversation(id, sessionId);
-  if (!ok) return Response.json({ error: "삭제 실패" }, { status: 400 });
+  // 소유한 대화가 실제로 삭제됐을 때만 성공. 없거나 타 세션 소유면 404.
+  if (!ok) return Response.json({ error: "대화를 찾을 수 없습니다." }, { status: 404 });
   return Response.json({ ok: true });
 }

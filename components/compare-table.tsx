@@ -76,8 +76,8 @@ export function CompareTable({ items }: { items: CompareItem[] }) {
               <td className="sticky left-0 bg-[#12121c] px-3 py-2 text-white/40">장점</td>
               {items.map((it) => (
                 <td key={it.id} className="px-3 py-2 text-emerald-300/80">
-                  {it.pros?.map((x) => (
-                    <div key={x}>+ {x}</div>
+                  {it.pros?.map((x, xi) => (
+                    <div key={`${xi}-${x}`}>+ {x}</div>
                   ))}
                 </td>
               ))}
@@ -88,8 +88,8 @@ export function CompareTable({ items }: { items: CompareItem[] }) {
               <td className="sticky left-0 bg-[#12121c] px-3 py-2 text-white/40">단점</td>
               {items.map((it) => (
                 <td key={it.id} className="px-3 py-2 text-rose-300/80">
-                  {it.cons?.map((x) => (
-                    <div key={x}>- {x}</div>
+                  {it.cons?.map((x, xi) => (
+                    <div key={`${xi}-${x}`}>- {x}</div>
                   ))}
                 </td>
               ))}

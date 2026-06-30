@@ -101,7 +101,9 @@ export async function searchProductsSemantic(params: SearchParams): Promise<Sear
 
   // 의미 + 어휘 가중 합산 (어휘에는 카테고리/용도/태그/평점 신호가 들어있음).
   // 기본 45:55 — 평가 셋에서 Top-1 100%를 달성하는 지점(의미 검색의 일반화 + 어휘 정밀도 결합).
-  const SEM_W = Number(process.env.SEARCH_SEM_WEIGHT ?? 0.45);
+  const SEM_W_RAW = Number(process.env.SEARCH_SEM_WEIGHT);
+  // 비정상 설정값(NaN/범위초과)은 기본값 0.45로 폴백 — 랭킹이 NaN으로 깨지지 않도록
+  const SEM_W = Number.isFinite(SEM_W_RAW) && SEM_W_RAW >= 0 && SEM_W_RAW <= 1 ? SEM_W_RAW : 0.45;
   const LEX_W = 1 - SEM_W;
   const ranked = rows
     .map((r) => ({ p: r.p, score: SEM_W * normSim(r.sim) + LEX_W * normLex(r.lex) }))

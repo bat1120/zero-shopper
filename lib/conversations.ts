@@ -84,14 +84,18 @@ export async function getConversationMessages(
   return (data?.messages as UIMessage[]) ?? null;
 }
 
-/** 대화 삭제 (세션 소유 확인 포함). */
+/** 대화 삭제 (세션 소유 확인 포함). 실제로 삭제된 행이 있을 때만 true. */
 export async function deleteConversation(id: string, sessionId: string): Promise<boolean> {
   const db = getSupabase();
   if (!db || !id || !sessionId) return false;
-  const { error } = await db.from(TABLE).delete().eq("id", id).eq("session_id", sessionId);
+  const { error, count } = await db
+    .from(TABLE)
+    .delete({ count: "exact" })
+    .eq("id", id)
+    .eq("session_id", sessionId);
   if (error) {
     console.error("[conversations] delete 실패:", error.message);
     return false;
   }
-  return true;
+  return (count ?? 0) > 0;
 }

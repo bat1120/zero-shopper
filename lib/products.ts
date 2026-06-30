@@ -730,18 +730,6 @@ export function searchProducts(
   return { count: products.length, products };
 }
 
-/** ID 목록으로 상품을 가져와 비교용으로 반환 (입력 순서 유지) */
-export function compareProducts(ids: string[]): Product[] {
-  return ids
-    .map((id) => PRODUCTS.find((p) => p.id === id))
-    .filter((p): p is Product => Boolean(p));
-}
-
-/** 단일 상품 상세 */
-export function getProduct(id: string): Product | undefined {
-  return PRODUCTS.find((p) => p.id === id);
-}
-
 /** 카테고리 목록 (UI 안내·시스템 프롬프트용) */
 export function listCategories(): string[] {
   return Array.from(new Set(PRODUCTS.map((p) => p.category)));

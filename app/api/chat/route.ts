@@ -48,7 +48,8 @@ ${listCategories().join(", ")}`;
 ${sourceLine}
 
 [행동 원칙]
-1. 거의 항상 먼저 search_products를 호출하세요. 사용자 메시지에 상품 종류나 용도가 조금이라도 언급되면 **묻지 말고 즉시 search_products를 호출**하세요.
+0. **먼저 "쇼핑 요청인가?"를 판단하세요(게이트).** 사용자 메시지가 상품 구매·추천·비교와 무관하면(시·에세이·코드 작성, 번역, 일반 지식 문답, 잡담 등) **절대 search_products를 호출하지 말고**, 6번에 따라 정중히 거절한 뒤 어떤 상품을 찾는지 물으세요. 상품·용도·구매 의도가 조금이라도 있을 때만 1번으로 진행합니다. (없는 상품 카테고리를 임의로 지어내 검색하는 것은 금지입니다.)
+1. 쇼핑 요청이라면, 거의 항상 먼저 search_products를 호출하세요. 사용자 메시지에 상품 종류나 용도가 조금이라도 언급되면 **묻지 말고 즉시 search_products를 호출**하세요.
    - "무엇을 찾는지 모르겠다"고 되묻는 것은 금지입니다. 상품 이름·종류가 문장에 있으면 그게 검색 대상입니다.
    - 예) "5만 원으로 노트북 살 수 있어?" → search_products(query="5만원대 노트북", category="노트북", maxPrice=50000) 호출.
    - 예) "원룸 자취생인데 로봇청소기 들이고 싶어" → search_products(query="원룸 자취생용 로봇청소기", category="로봇청소기", useCase="원룸") 호출.
@@ -62,6 +63,7 @@ ${sourceLine}
    - 가격은 원(₩) 단위로 표기하고, 트레이드오프를 솔직하게 알려주세요.
    - 상품 카드와 비교표는 화면에 따로 렌더링되므로, 텍스트에서 장황하게 나열하지 말고 "판단의 근거"에 집중하세요.
 5. 답변 톤은 친근하고 신뢰감 있게. 과장 광고처럼 말하지 말고, 솔직한 조언자처럼 말하세요.
+6. **역할 범위**: 당신은 쇼핑 추천 도우미입니다. 시·에세이·코드 작성, 번역, 일반 지식 문답, 잡담 등 쇼핑과 무관한 작업은 정중히 거절하고("저는 쇼핑 추천을 도와드리는 에이전트예요") 어떤 상품을 찾는지 물어 자연스럽게 본래 역할로 돌아오세요. 단, 상품 선택에 필요한 일반 상식(용도·환경 설명 등)은 답해도 됩니다.
 
 [한국어 금액 단위 — 매우 중요]
 - "N만 원" = N × 10,000원. 예: "10만 원" = 100,000원, "100만 원" = 1,000,000원, "30만 원" = 300,000원.
@@ -82,11 +84,28 @@ export async function POST(req: Request) {
     );
   }
 
-  const {
-    messages,
-    id,
-    sessionId,
-  }: { messages: UIMessage[]; id?: string; sessionId?: string } = await req.json();
+  // 잘못된/빈 본문은 500이 아니라 400으로 친절히 처리
+  let body: { messages?: UIMessage[]; id?: string; sessionId?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "요청 본문이 올바른 JSON이 아닙니다." }, { status: 400 });
+  }
+  const { messages, id, sessionId } = body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return Response.json(
+      { error: "messages 배열이 필요합니다." },
+      { status: 400 }
+    );
+  }
+
+  // 메시지 형식(누락된 parts, 잘못된 role 등)이 깨졌으면 500이 아니라 400으로 처리
+  let modelMessages;
+  try {
+    modelMessages = await convertToModelMessages(messages);
+  } catch {
+    return Response.json({ error: "messages 형식이 올바르지 않습니다." }, { status: 400 });
+  }
 
   // 개인화 메모리: 이전 대화들에서 누적된 사용자 선호를 로드해 프롬프트에 주입
   const profile = sessionId ? await getProfile(sessionId) : null;
@@ -94,7 +113,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: openai(MODEL),
     system: buildSystemPrompt(profile),
-    messages: await convertToModelMessages(messages),
+    messages: modelMessages,
     // 도구 호출 → 결과 반영 → 추가 도구 호출 또는 최종 답변까지 멀티스텝 루프 허용
     stopWhen: stepCountIs(6),
     tools: {
