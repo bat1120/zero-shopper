@@ -31,9 +31,10 @@ export function rrfOrder(sims: number[], k = RRF_K): number[] {
   semOrder.forEach((origIdx, pos) => {
     semRank[origIdx] = pos;
   });
-  // 어휘 순위는 곧 원본 인덱스(i) — 네이버가 관련도순으로 주기 때문
+  // 어휘 순위는 곧 원본 인덱스(i) — 네이버가 관련도순으로 주기 때문.
+  // 표준 RRF는 1-based rank를 쓰므로 두 순위 모두 +1 (top → 1/(k+1)).
   return idx
-    .map((i) => ({ i, score: 1 / (k + i) + 1 / (k + semRank[i]) }))
+    .map((i) => ({ i, score: 1 / (k + i + 1) + 1 / (k + semRank[i] + 1) }))
     .sort((a, b) => b.score - a.score)
     .map((r) => r.i);
 }
@@ -168,10 +169,14 @@ export async function searchProductsLive(params: SearchParams): Promise<SearchRe
 
   const limit = clampLimit(params.limit);
 
-  if (candidates.length > 1) {
-    const sims = await semanticSimilarities(queryEmbeddingText(params), candidates);
+  // 임베딩 비용 절감: 네이버 관련도 상위 풀(약 2×limit)만 재랭킹한다.
+  // (RRF는 네이버 상위 십여 개에서 재랭킹 이득을 거의 다 얻으므로, 30개 전부 임베딩할 필요가 없음)
+  const pool = candidates.slice(0, Math.max(limit * 2, 12));
+
+  if (pool.length > 1) {
+    const sims = await semanticSimilarities(queryEmbeddingText(params), pool);
     if (sims) {
-      const ranked = rrfOrder(sims).map((i) => candidates[i]);
+      const ranked = rrfOrder(sims).map((i) => pool[i]);
       return { count: Math.min(ranked.length, limit), products: ranked.slice(0, limit) };
     }
   }

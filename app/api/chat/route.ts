@@ -70,7 +70,16 @@ function rehydrateProductStore(msgs: UIMessage[]): void {
   if (seen.length) rememberProducts(seen);
 }
 
+// 정적 시스템 프롬프트는 프로세스당 1회만 만든다(매 요청 ~1.5k토큰 문자열 재생성 방지).
+// 동적 부분(사용자 메모리)은 항상 끝에 붙여 OpenAI 프리픽스 캐시가 유지되게 한다.
+let STATIC_SYSTEM_PROMPT: string | null = null;
+
 function buildSystemPrompt(profile: ProfileRecord | null): string {
+  if (STATIC_SYSTEM_PROMPT === null) STATIC_SYSTEM_PROMPT = buildStaticSystemPrompt();
+  return STATIC_SYSTEM_PROMPT + profilePromptBlock(profile);
+}
+
+function buildStaticSystemPrompt(): string {
   const live = searchSource() === "naver";
   const sourceLine = live
     ? `상품은 **네이버 쇼핑(실시간)** 에서 검색합니다. 특정 카테고리에 국한되지 않고 사용자가 원하는 거의 모든 상품을 찾을 수 있습니다. (예시 카테고리: ${listCategories().join(", ")} 등)`
@@ -116,7 +125,7 @@ ${sourceLine}
 - "N천 원" = N × 1,000원. 도구의 minPrice/maxPrice에는 이렇게 환산한 "원 단위" 정수를 넣으세요. (예: "100만 원 이하" → maxPrice=1000000)
 
 [검색 결과가 비었을 때]
-- search_products가 0건을 반환하면 엉뚱한 상품을 추천하지 말고, "해당 조건에는 상품을 못 찾았다"고 솔직히 말한 뒤 조건(예산 등)을 바꿔볼 것을 제안하세요.${liveNote}${profilePromptBlock(profile)}`;
+- search_products가 0건을 반환하면 엉뚱한 상품을 추천하지 말고, "해당 조건에는 상품을 못 찾았다"고 솔직히 말한 뒤 조건(예산 등)을 바꿔볼 것을 제안하세요.${liveNote}`;
 }
 
 export async function POST(req: Request) {
@@ -311,8 +320,13 @@ export async function POST(req: Request) {
       }
       // 다음 질문을 위한 선호 갱신: 응답을 지연시키지 않도록 after()로 응답 종료 후 실행.
       // (서버리스에서 fire-and-forget은 함수가 얼어붙어 중단되므로 after로 함수 수명을 연장)
+      // 매 턴 LLM 추출은 낭비이므로 게이트: 첫 턴(시드) + 이후 3턴마다만 갱신.
+      // (메모리는 '약한 참고 신호'이므로 매 턴 정밀 갱신할 필요가 없음)
       if (sessionId) {
-        after(() => updateProfileFromConversation(sessionId, finalMessages, profile));
+        const userTurns = finalMessages.filter((m) => m.role === "user").length;
+        if (userTurns === 1 || userTurns % 3 === 0) {
+          after(() => updateProfileFromConversation(sessionId, finalMessages, profile));
+        }
       }
     },
   });

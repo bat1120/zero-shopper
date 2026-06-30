@@ -97,6 +97,16 @@ async function judge(intent: string, pool: { index: number; p: Product }[]): Pro
   return map;
 }
 
+/** 결정적(시드 기반) 0~1 키 — 심판 제시 순서를 재현 가능하게 섞기 위함 (FNV-1a) */
+function seededKey(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 2 ** 32;
+}
+
 // --- 지표 ---
 function dcgAtK(rels: number[], k: number): number {
   let s = 0;
@@ -156,9 +166,14 @@ async function main() {
     const poolIdx = Array.from(
       new Set(strategies.flatMap((s) => orders[s].slice(0, JUDGE_TOP)))
     );
+    // 제시 순서를 결정적으로 섞는다 — LLM 심판의 위치 편향(앞에 보이는 항목 후한 점수)이
+    // 특정 전략(네이버 관련도순) 쪽으로 정답을 기울이지 않도록. rel 매핑은 index 기준이라 안전.
+    const shownPool = [...poolIdx].sort(
+      (a, b) => seededKey(`${item.intent}:${a}`) - seededKey(`${item.intent}:${b}`)
+    );
     const rels = await judge(
       item.intent,
-      poolIdx.map((index) => ({ index, p: candidates[index] }))
+      shownPool.map((index) => ({ index, p: candidates[index] }))
     );
     const relOf = (i: number) => rels.get(i) ?? 0;
     const allRels = poolIdx.map(relOf);
