@@ -1,7 +1,7 @@
 import { embed, embedMany, cosineSimilarity } from "ai";
 import { openai } from "@ai-sdk/openai";
 import type { Product, SearchParams, SearchResult } from "./types";
-import { getCandidates, lexicalScore, tokenize, searchProducts, clampLimit } from "./products";
+import { getCandidates, lexicalScore, tokenize, searchProducts, clampLimit, sortByMode } from "./products";
 import { queryEmbeddingText, productEmbeddingText } from "./embed-text";
 import { searchNaver, hasNaverCredentials } from "./naver-shopping";
 import { rememberProducts } from "./product-store";
@@ -107,9 +107,13 @@ export async function searchProductsSemantic(params: SearchParams): Promise<Sear
     // 비정상 설정값(NaN/범위초과)은 기본값 0.45로 폴백 — 랭킹이 NaN으로 깨지지 않도록
     const SEM_W = Number.isFinite(SEM_W_RAW) && SEM_W_RAW >= 0 && SEM_W_RAW <= 1 ? SEM_W_RAW : 0.45;
     const LEX_W = 1 - SEM_W;
-    const ranked = rows
-      .map((r) => ({ p: r.p, score: SEM_W * normSim(r.sim) + LEX_W * normLex(r.lex) }))
-      .sort((a, b) => b.score - a.score);
+    const ranked = rows.map((r) => ({
+      p: r.p,
+      score: SEM_W * normSim(r.sim) + LEX_W * normLex(r.lex),
+    }));
+    // sortBy를 존중: price_asc/desc/rating이면 결정적 정렬, relevance(기본)면 하이브리드 점수순.
+    // (기존엔 항상 score순이라 사용자가 요청한 "싼 순/평점순"이 임베딩 경로에서 무시됐음)
+    sortByMode(ranked, params.sortBy);
 
     const limit = clampLimit(params.limit);
     const products: Product[] = ranked.slice(0, limit).map((r) => r.p);
@@ -168,6 +172,14 @@ export async function searchProductsLive(params: SearchParams): Promise<SearchRe
   if (candidates.length === 0) return { count: 0, products: [] };
 
   const limit = clampLimit(params.limit);
+
+  // 사용자가 명시적 가격 정렬을 요청하면 네이버가 이미 그 순서로 반환한다(naver-shopping의 sort=asc/dsc).
+  // RRF 재랭킹은 그 순서를 깨뜨리므로 건너뛰고 네이버 정렬을 그대로 존중한다.
+  // (rating은 네이버가 지원하지 않고 라이브 상품엔 평점이 없어 relevance와 동일하게 RRF 경로로 둔다)
+  if (params.sortBy === "price_asc" || params.sortBy === "price_desc") {
+    const products = candidates.slice(0, limit);
+    return { count: products.length, products };
+  }
 
   // 임베딩 비용 절감: 네이버 관련도 상위 풀(약 2×limit)만 재랭킹한다.
   // (RRF는 네이버 상위 십여 개에서 재랭킹 이득을 거의 다 얻으므로, 30개 전부 임베딩할 필요가 없음)

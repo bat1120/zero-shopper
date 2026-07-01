@@ -45,6 +45,10 @@ function rehydrateProductStore(msgs: UIMessage[]): void {
       if (p.type !== "tool-search_products" || p.state !== "output-available") continue;
       for (const o of p.output?.products ?? []) {
         if (!o.id || !o.name) continue;
+        // 라이브(nv-) 상품만 복원한다. 카탈로그(lt-/eb-) id를 복원하면 LLM용 축약 출력
+        // (specs/pros/cons 생략)이 캐시에 들어가고, resolveProduct가 캐시를 PRODUCTS보다
+        // 우선하므로 다음 턴 비교/상세에서 스펙·장단점이 통째로 비어 버린다.
+        if (!o.id.startsWith("nv-")) continue;
         seen.push({
           id: o.id,
           name: o.name,

@@ -86,7 +86,9 @@ function conversationText(messages: UIMessage[]): string {
       .trim();
     if (text) lines.push(`${m.role === "user" ? "사용자" : "에이전트"}: ${text}`);
   }
-  return lines.join("\n").slice(0, 6000);
+  // 길면 앞(오래된 인사·시드)이 아니라 뒤(최신 턴)를 남긴다 —
+  // 현재 선호는 최근 대화에 담기고, 프로필 갱신은 긴 대화(턴 3/6/9…)에서 발동하기 때문.
+  return lines.join("\n").slice(-6000);
 }
 
 /**

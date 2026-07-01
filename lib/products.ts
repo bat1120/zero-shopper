@@ -687,7 +687,7 @@ export function clampLimit(limit?: number): number {
   return Math.max(1, Math.min(limit ?? 6, 12));
 }
 
-function sortByMode(
+export function sortByMode(
   scored: { p: Product; score: number }[],
   sortBy: SearchParams["sortBy"]
 ): void {

@@ -55,7 +55,7 @@ export default function Home() {
       })
   );
 
-  const { messages, sendMessage, status, error, stop, setMessages } = useChat({ transport });
+  const { messages, sendMessage, status, error, stop, setMessages, clearError } = useChat({ transport });
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -146,6 +146,7 @@ export default function Home() {
     conversationIdRef.current = crypto.randomUUID();
     setActiveId(conversationIdRef.current);
     setMessages([]);
+    clearError(); // setMessages는 error/status를 건드리지 않음 — 새 대화에 이전 오류 배너가 남지 않게
     setSidebarOpen(false);
   }
 
@@ -168,6 +169,7 @@ export default function Home() {
       conversationIdRef.current = id;
       setActiveId(id);
       setMessages(data.messages ?? []);
+      clearError(); // 과거 대화를 열 때 이전 오류 배너 제거
     } catch {
       /* 무시 */
     } finally {
@@ -443,7 +445,6 @@ function isRenderablePart(part: any): boolean {
   return false;
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function PartView({ part, onAsk }: { part: any; onAsk: (text: string) => void }) {
   // 1) 일반 텍스트
   if (part.type === "text") {
